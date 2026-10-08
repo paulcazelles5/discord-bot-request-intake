@@ -1,15 +1,18 @@
-# [Project name]
+# Discord Bot Request Intake
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Discord bot for an English-speaking server where members submit bot-build requests to a staff team.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/scripts run discord-bot` — run the Discord request bot
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required secret for the bot: `DISCORD_BOT_TOKEN`
+- The bot only handles commands and request DMs for guild `1499704751481294878`.
+- Required staff channels: `・requests` and `・data`.
 
 ## Stack
 
@@ -22,23 +25,28 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `scripts/src/discord-bot.ts` — Discord bot commands and the two-step request intake flow.
+- `scripts/README.discord-bot.md` — Discord Developer Portal and channel setup notes.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The bot uses Discord Gateway via `discord.js`; the Replit Discord account connector does not run bot gateway clients.
+- Bot credentials are configured through Replit Secrets and are never requested from server members.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- `!help` lists the bot's commands.
+- `!request` collects a feature description in DMs, posts it to `・requests`, then collects non-secret setup details and posts them to `・data`.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- All bot messages and commands should be in English.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Enable the Message Content Intent in the Discord Developer Portal.
+- Keep `・data` restricted to staff. Members must never submit bot tokens, API keys, passwords, client secrets, or other credentials.
+- Active request conversations are held in memory and are lost if the bot process restarts before the member finishes.
 
 ## Pointers
 
