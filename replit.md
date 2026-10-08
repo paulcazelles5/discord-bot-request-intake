@@ -31,7 +31,7 @@ A Discord bot for an English-speaking server where members submit bot-build requ
 ## Architecture decisions
 
 - The bot uses Discord Gateway via `discord.js`; the Replit Discord account connector does not run bot gateway clients.
-- Bot credentials are configured through Replit Secrets and are never requested from server members.
+- The intake bot's token is stored in Replit Secrets. Members configure credentials for their own requested bots in their own hosting secret manager; those values are never requested or relayed by this bot.
 
 ## Product
 

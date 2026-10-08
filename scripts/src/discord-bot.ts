@@ -83,7 +83,7 @@ async function startRequest(message: Message): Promise<void> {
     await message.author.send(
       "Please describe the bot you'd like us to build: its purpose, who will use it, and its main features.\n\n" +
         "Never send bot tokens, passwords, API keys, client secrets, or other credentials. " +
-        "The staff team will configure any required secrets securely.",
+        "After the staff team provides the code, you will add any required credentials yourself in your hosting provider's private secrets.",
     );
     pendingRequests.set(message.author.id, {
       guildId: HOME_GUILD_ID,
@@ -142,7 +142,8 @@ async function handleRequestDetails(message: Message, state: PendingRequest): Pr
       "Thanks — I’ve sent your request to the staff team in `・requests`.\n\n" +
         "Now send any **non-secret** setup details that may help, such as the application/client ID (if you already have one), " +
         "required permissions or intents, preferred language/library, and hosting needs. " +
-        "Do not send a bot token, client secret, password, API key, or any other credential.",
+        "The staff team will provide the code and setup instructions; you will add any required token or OAuth2 client secret yourself " +
+        "in your hosting provider's private secrets. Never send credentials in Discord.",
     );
   } catch {
     pendingRequests.delete(message.author.id);
