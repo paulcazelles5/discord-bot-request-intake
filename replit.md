@@ -35,8 +35,9 @@ A Discord bot for an English-speaking server where members submit bot-build requ
 
 ## Product
 
-- `!help` lists the bot's commands.
+- `!help` lists public and staff commands.
 - `!request` collects a feature description in DMs, posts it to `・requests`, then collects non-secret setup details and posts them to `・data`.
+- Staff commands require Manage Server: `!history` DMs recent request links, `!log #channel` selects the request-event log destination, and `!ask @user <question>` sends a custom DM follow-up whose reply goes to `・data`.
 
 ## User preferences
 
@@ -47,6 +48,7 @@ A Discord bot for an English-speaking server where members submit bot-build requ
 - Enable the Message Content Intent in the Discord Developer Portal.
 - Keep `・data` restricted to staff. Members must never submit bot tokens, API keys, passwords, client secrets, or other credentials.
 - Active request conversations are held in memory and are lost if the bot process restarts before the member finishes.
+- The `!log` destination is stored as a non-secret channel ID in `scripts/discord-bot-config.json`.
 
 ## Pointers
 

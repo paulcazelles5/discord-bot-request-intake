@@ -1,6 +1,11 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   Client,
   GatewayIntentBits,
+  PermissionFlagsBits,
+  type GuildMember,
   type GuildTextBasedChannel,
   Partials,
   type Message,
@@ -11,21 +16,55 @@ const HOME_GUILD_ID = "1499704751481294878";
 const REQUESTS_CHANNEL_NAME = "・requests";
 const DATA_CHANNEL_NAME = "・data";
 const MAX_REPLY_LENGTH = 1_200;
+const BOT_CONFIG_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../discord-bot-config.json",
+);
 
 if (!BOT_TOKEN) {
   throw new Error("Missing required DISCORD_BOT_TOKEN secret.");
 }
 
-type RequestStage = "request" | "setup-details";
+type RequestStage = "request" | "setup-details" | "staff-follow-up";
 
 interface PendingRequest {
   guildId: string;
   stage: RequestStage;
-  requestText?: string;
   requestMessageUrl?: string;
+  staffQuestion?: string;
+  askedById?: string;
 }
 
 const pendingRequests = new Map<string, PendingRequest>();
+let requestLogChannelId: string | null = null;
+
+async function loadBotConfig(): Promise<void> {
+  try {
+    const config = JSON.parse(await readFile(BOT_CONFIG_PATH, "utf8")) as {
+      requestLogChannelId?: unknown;
+    };
+    if (
+      typeof config.requestLogChannelId === "string" &&
+      /^\d{17,20}$/.test(config.requestLogChannelId)
+    ) {
+      requestLogChannelId = config.requestLogChannelId;
+    } else {
+      console.error("Discord bot configuration is missing a valid request log channel ID.");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("Could not read the Discord bot configuration.");
+    }
+  }
+}
+
+async function saveBotConfig(): Promise<void> {
+  await writeFile(
+    BOT_CONFIG_PATH,
+    `${JSON.stringify({ requestLogChannelId }, null, 2)}\n`,
+    "utf8",
+  );
+}
 
 const client = new Client({
   intents: [
@@ -68,8 +107,40 @@ async function findStaffChannel(name: string): Promise<GuildTextBasedChannel | n
   return channel?.isTextBased() ? channel : null;
 }
 
+async function fetchGuildTextChannel(channelId: string): Promise<GuildTextBasedChannel | null> {
+  const guild = await client.guilds.fetch(HOME_GUILD_ID);
+  const channel = await guild.channels.fetch(channelId);
+  if (!channel?.isTextBased() || channel.isThread()) return null;
+  return channel;
+}
+
+function isStaffCommand(message: Message): boolean {
+  return message.member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false;
+}
+
+async function logRequestCommand(message: Message): Promise<void> {
+  if (!requestLogChannelId) return;
+  try {
+    const channel = await fetchGuildTextChannel(requestLogChannelId);
+    if (!channel) throw new Error("Configured request log channel is unavailable.");
+    const timestamp = Math.floor(message.createdTimestamp / 1_000);
+    await channel.send({
+      content:
+        `**New request command**\n` +
+        `Member: ${message.author.username} (<@${message.author.id}> / \`${message.author.id}\`)\n` +
+        `Time: <t:${timestamp}:F>\n` +
+        `Command channel: <#${message.channelId}>`,
+      allowedMentions: noMentions,
+    });
+  } catch {
+    console.error("Could not post request activity to the configured log channel.");
+  }
+}
+
 async function startRequest(message: Message): Promise<void> {
   if (!message.guild || message.guild.id !== HOME_GUILD_ID) return;
+
+  await logRequestCommand(message);
 
   if (pendingRequests.has(message.author.id)) {
     await message.reply({
@@ -134,7 +205,6 @@ async function handleRequestDetails(message: Message, state: PendingRequest): Pr
     });
 
     state.stage = "setup-details";
-    state.requestText = requestText;
     state.requestMessageUrl = sentRequest.url;
     pendingRequests.set(message.author.id, state);
 
@@ -196,6 +266,237 @@ async function handleSetupDetails(message: Message, state: PendingRequest): Prom
   }
 }
 
+async function handleHistoryCommand(message: Message): Promise<void> {
+  try {
+    const requestsChannel = await findStaffChannel(REQUESTS_CHANNEL_NAME);
+    if (!requestsChannel) throw new Error("Requests channel is unavailable.");
+
+    const recentRequests = (await requestsChannel.messages.fetch({ limit: 100 }))
+      .filter(
+        (entry) =>
+          entry.author.id === client.user?.id &&
+          entry.content.startsWith("**New bot request**"),
+      )
+      .first(20);
+
+    const lines = recentRequests.map((entry) => {
+      const requesterId = entry.content.match(/Requested by: <@!?(\d+)>/)?.[1];
+      const requester = requesterId ? `<@${requesterId}>` : "Unknown member";
+      return `• <t:${Math.floor(entry.createdTimestamp / 1_000)}:f> — ${requester} — [open request](${entry.url})`;
+    });
+
+    await message.author.send({
+      content:
+        lines.length > 0
+          ? `**Latest ${lines.length} bot requests from ・requests**\n${lines.join("\n")}`
+          : "There are no recent bot requests in `・requests`.",
+      allowedMentions: noMentions,
+    });
+    await message.reply({
+      content: "I sent the latest request links to your DMs.",
+      allowedMentions: noMentions,
+    });
+  } catch {
+    await message.reply({
+      content: "I couldn’t access the request history or DM you. Check my channel permissions and your DM settings.",
+      allowedMentions: noMentions,
+    });
+  }
+}
+
+async function handleLogCommand(message: Message, args: string[]): Promise<void> {
+  const channelArgument = args[1];
+  const mentionMatch = channelArgument?.match(/^<#(\d+)>$/);
+  const idMatch = channelArgument?.match(/^(\d+)$/);
+  const channelId = mentionMatch?.[1] ?? idMatch?.[1];
+  if (!channelId || args.length !== 2) {
+    await message.reply({
+      content: "Usage: `!log #channel` — set the channel that receives request activity logs.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  try {
+    const channel = await fetchGuildTextChannel(channelId);
+    if (!channel || !message.guild) {
+      await message.reply({
+        content: "I couldn’t find that text channel in this server.",
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+
+    const botMember = message.guild.members.me ?? (await message.guild.members.fetchMe());
+    const permissions = channel.permissionsFor(botMember);
+    if (
+      !permissions?.has([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+      ])
+    ) {
+      await message.reply({
+        content: "I need View Channel and Send Messages permissions in that channel.",
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+
+    const previousLogChannelId = requestLogChannelId;
+    requestLogChannelId = channel.id;
+    try {
+      await saveBotConfig();
+    } catch {
+      requestLogChannelId = previousLogChannelId;
+      await message.reply({
+        content: "I couldn’t save the log channel setting. Please try again.",
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+
+    await message.reply({
+      content:
+        `Request activity logging is enabled in <#${channel.id}>. I’ll post the member’s name, user ID, time, and command channel whenever someone runs \`!request\`; I won’t copy DM contents.`,
+      allowedMentions: noMentions,
+    });
+  } catch {
+    await message.reply({
+      content: "I couldn’t configure that log channel. Check my permissions and try again.",
+      allowedMentions: noMentions,
+    });
+  }
+}
+
+async function handleAskCommand(message: Message, args: string[]): Promise<void> {
+  const userArgument = args[1];
+  const mentionMatch = userArgument?.match(/^<@!?(\d+)>$/);
+  const idMatch = userArgument?.match(/^(\d+)$/);
+  const targetId = mentionMatch?.[1] ?? idMatch?.[1];
+  const question = args.slice(2).join(" ").trim();
+
+  if (!targetId || !question) {
+    await message.reply({
+      content: "Usage: `!ask @user <question>` — send a custom request follow-up in DMs.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (question.length > MAX_REPLY_LENGTH) {
+    await message.reply({
+      content: `Keep the question to ${MAX_REPLY_LENGTH.toLocaleString("en-US")} characters or fewer.`,
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (containsLikelyCredential(question)) {
+    await message.reply({
+      content: "I can’t send a question that appears to contain a credential. Never share tokens or secrets in Discord.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (pendingRequests.has(targetId)) {
+    await message.reply({
+      content: "That member already has an active DM flow. Wait for it to finish before sending another question.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const guild = message.guild;
+  if (!guild) return;
+  let member: GuildMember;
+  try {
+    member = await guild.members.fetch(targetId);
+  } catch {
+    await message.reply({
+      content: "I couldn’t find that member in this server.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (member.user.bot) {
+    await message.reply({
+      content: "You can only ask a server member.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  pendingRequests.set(targetId, {
+    guildId: HOME_GUILD_ID,
+    stage: "staff-follow-up",
+    staffQuestion: question,
+    askedById: message.author.id,
+  });
+
+  try {
+    await member.send({
+      content:
+        `The staff team has a follow-up question about your bot request:\n\n${question}\n\n` +
+        "Reply to this DM with your answer. Never send a bot token, password, API key, client secret, or other credential.",
+      allowedMentions: noMentions,
+    });
+  } catch {
+    pendingRequests.delete(targetId);
+    await message.reply({
+      content: "I couldn’t DM that member. They may need to enable direct messages from this server.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  await message.reply({
+    content: `I sent your question to <@${targetId}> in DMs. Their reply will be sent to \`・data\`.`,
+    allowedMentions: noMentions,
+  });
+}
+
+async function handleStaffFollowupReply(
+  message: Message,
+  state: PendingRequest,
+): Promise<void> {
+  const answer = message.content.trim();
+  if (!answer) {
+    await message.reply("Please send your answer as a text message.");
+    return;
+  }
+  if (answer.length > MAX_REPLY_LENGTH) {
+    await message.reply(
+      `Please shorten your answer to ${MAX_REPLY_LENGTH.toLocaleString("en-US")} characters or fewer.`,
+    );
+    return;
+  }
+  if (containsLikelyCredential(answer)) {
+    await message.reply(
+      "That message appears to contain a credential, so I did not forward it. Please delete it from this DM and resend only non-secret information.",
+    );
+    return;
+  }
+
+  try {
+    const dataChannel = await findStaffChannel(DATA_CHANNEL_NAME);
+    if (!dataChannel) throw new Error("Data channel is unavailable.");
+
+    await dataChannel.send({
+      content: capForDiscord(
+        `**Staff follow-up reply**\nMember: <@${message.author.id}> (\`${message.author.id}\`)\n` +
+          `Asked by: <@${state.askedById ?? "unknown"}>\n` +
+          `Question: ${state.staffQuestion ?? "See staff DM"}\n\nAnswer:\n${answer}`,
+      ),
+      allowedMentions: noMentions,
+    });
+
+    pendingRequests.delete(message.author.id);
+    await message.reply("Thanks — I sent your reply to the staff team.");
+  } catch {
+    await message.reply(
+      "I couldn’t deliver your reply to the staff channel. Your follow-up is still open; please try again later.",
+    );
+  }
+}
+
 client.once("clientReady", () => {
   console.info(`Discord request bot ready as ${client.user?.tag ?? "unknown user"}.`);
 });
@@ -206,15 +507,47 @@ client.on("messageCreate", async (message) => {
   try {
     if (message.guild) {
       if (message.guild.id !== HOME_GUILD_ID) return;
-      const command = message.content.trim().toLowerCase();
+      const args = message.content.trim().split(/\s+/);
+      const command = args[0]?.toLowerCase();
       if (command === "!help") {
         await message.reply({
           content:
-            "**Bot request commands**\n`!help` — list available commands\n`!request` — start a bot request in DMs",
+            "**Bot request commands**\n" +
+              "`!help` — list available commands\n" +
+              "`!request` — start a bot request in DMs\n\n" +
+              "**Staff only (Manage Server permission)**\n" +
+              "`!history` — DM links to the 20 latest requests\n" +
+              "`!log #channel` — choose where request activity is logged\n" +
+              "`!ask @user <question>` — ask a member a follow-up in DMs",
           allowedMentions: noMentions,
         });
-      } else if (command === "!request") {
+      } else if (command === "!request" && args.length === 1) {
         await startRequest(message);
+      } else if (
+        command === "!history" ||
+        command === "!log" ||
+        command === "!ask"
+      ) {
+        if (!isStaffCommand(message)) {
+          await message.reply({
+            content: "This command is staff-only and requires the Manage Server permission.",
+            allowedMentions: noMentions,
+          });
+          return;
+        }
+
+        if (command === "!history" && args.length === 1) {
+          await handleHistoryCommand(message);
+        } else if (command === "!log") {
+          await handleLogCommand(message, args);
+        } else if (command === "!ask") {
+          await handleAskCommand(message, args);
+        } else {
+          await message.reply({
+            content: "Usage: `!history`",
+            allowedMentions: noMentions,
+          });
+        }
       }
       return;
     }
@@ -224,8 +557,10 @@ client.on("messageCreate", async (message) => {
 
     if (state.stage === "request") {
       await handleRequestDetails(message, state);
-    } else {
+    } else if (state.stage === "setup-details") {
       await handleSetupDetails(message, state);
+    } else {
+      await handleStaffFollowupReply(message, state);
     }
   } catch {
     console.error("A message could not be processed by the Discord request bot.");
@@ -240,4 +575,5 @@ process.on("unhandledRejection", () => {
   console.error("The Discord request bot encountered an unhandled error.");
 });
 
+await loadBotConfig();
 await client.login(BOT_TOKEN);
