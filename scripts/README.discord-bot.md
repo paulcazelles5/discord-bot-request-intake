@@ -1,33 +1,51 @@
-# Discord request bot setup
+# Discord request bot
 
-The bot supports `!help`, `!request`, `!history`, `!log`, and `!ask` in guild `1499704751481294878` only. Its responses and DMs are in English.
+The bot's messages are in English and it handles commands only in guild `1499704751481294878`. Request intake and command permissions are saved in the Replit PostgreSQL database.
 
 ## Discord setup
 
-1. Create a bot application in the Discord Developer Portal and add its bot user to the target server.
-2. In **Bot → Privileged Gateway Intents**, enable **Message Content Intent**.
-3. Give the bot View Channel, Send Messages, and Read Message History in `・requests` and `・data`.
-4. Restrict `・data` and any channel selected with `!log` to staff. The bot only posts non-secret request metadata or setup replies there.
-5. Add this request bot's token to this Replit project as the `DISCORD_BOT_TOKEN` secret. Never paste it into Discord, source files, or chat.
+1. Add the bot to the target server and enable **Message Content Intent** in the Discord Developer Portal.
+2. In `・requests` and `・data`, allow the bot to view the channel, send messages, read message history, and attach files.
+3. In `・requests`, also allow **Create Public Threads** and **Send Messages in Threads** so each request can have a staff discussion thread. The request itself is still posted if thread creation is unavailable.
+4. Restrict `・requests`, `・data`, and the selected `!log` channel to staff. The bot's own command permissions do not grant access to Discord channels.
+5. Add the bot's own token to this Replit project as the `DISCORD_BOT_TOKEN` secret. Never paste that token into Discord, source files, or chat.
 
-For bots requested by members, the member must add that bot's token—and an OAuth2 client secret only if their bot needs OAuth2—to the secret manager of their own hosting project. Staff provide the code and setup instructions; they do not receive these values.
+Members configure credentials for their requested bots themselves in the private secrets manager of their own hosting project. This bot never asks for or forwards tokens, passwords, API keys, OAuth client secrets, or other credentials. Credential-pattern checks cannot reliably inspect images, so members must not upload screenshots containing secrets.
 
-## Request flow
+## Member commands and request flow
 
-- A member runs `!request` in the target server.
-- If staff configured a log channel with `!log #channel`, the bot posts the member's username, user ID, command time, and command channel there. It does not log DM content.
-- The bot DMs them for a feature description and posts the response to `・requests`.
-- The bot then asks for non-secret setup information, such as an application/client ID, permissions, intents, preferred library, and hosting needs.
-- That second response is posted to `・data`, with a link to the original request.
-- Messages that look like credentials are rejected and are not relayed. Members should delete any accidentally sent credentials from their DM.
-- The member configures their own requested bot's credentials in their hosting provider's private secrets after receiving the code.
+- `!help` — show the command list.
+- `!request` — start one request at a time in DMs. A member can start up to three requests per 24 hours.
+- `!resume` — resend the current unanswered DM question.
+- `!cancel` — cancel the member's own open request.
 
-The bot does not retain or persist pending conversations. If it restarts mid-request, the member can start again with `!request`.
+The bot asks for a feature description and posts it to `・requests`, then asks for non-secret setup details and posts them to `・data`. Members may attach up to three PNG, JPG, or WebP reference images (8 MB each) with the initial description; images are forwarded to the staff request thread. The bot rejects unsupported attachments and text that appears to contain credentials.
 
-## Staff commands
+Each request has a persistent ID such as `REQ-00001`, a status, timestamps, an optional assignee, a staff thread, follow-ups, and an event history. If a member is expected to reply, the bot sends one reminder after 48 hours and expires that step after 14 days without a reply.
 
-These commands require the Discord **Manage Server** permission and only work in the target server:
+## Staff and owner commands
 
-- `!history` — DM the staff member links to the 20 latest requests in `・requests`.
-- `!log #channel` — set the destination for `!request` activity logs. Accepts a channel mention or channel ID. The selected channel ID is saved in the local, non-secret `scripts/discord-bot-config.json` file and survives workflow restarts.
-- `!ask @user <question>` — DM a custom follow-up question to a member. Their non-secret reply is sent to `・data`. This is rejected if they already have an active request DM flow.
+Only Discord user ID `1264183250243420211` has automatic staff access. Server roles and the Manage Server permission do not grant bot command access. The owner can grant access to individual user IDs:
+
+- `!perm !history 123456789012345678` — grant one staff command.
+- `!perm all 123456789012345678` — grant all staff commands.
+- `!unperm !history 123456789012345678` — block/revoke one command (also overrides an `all` grant).
+- `!unperm all 123456789012345678` — remove all grants and overrides.
+- `!perm list [@user]` — view saved grants and overrides.
+
+Available staff commands:
+
+- `!history [page] [status] [user-id]` — DM 20 requests per page; optionally filter by status or member ID.
+- `!log #channel` — save the channel for `!request` metadata logs.
+- `!ask @user <question>` — send a custom follow-up DM about the member's current request; the non-secret answer is sent to `・data`.
+- `!status REQ-ID received|accepted|in-progress|completed|declined [note]` — update status and notify the member.
+- `!assign REQ-ID @staff-member` — assign a request and notify the assignee.
+- `!reopen REQ-ID` — reopen a closed request.
+- `!export REQ-ID` — DM a text export of one request.
+- `!backup` — DM the request data as a JSON backup.
+- `!retention` — show the current closed-request retention setting.
+- `!retention <1-3650|off>` — automatically delete closed requests and related records after the selected number of days, or turn automatic deletion off.
+
+Automatic deletion is **off by default**. Open requests are never removed by this retention setting. `!backup` and `!export` contain request data and should be kept private.
+
+The bot's minimum channel permissions still apply even to the owner and users granted commands. Keep the workflow running for the bot to receive events; reconnects and request-state recovery are handled by the bot, but a development workflow does not guarantee 24/7 production uptime.
