@@ -33,14 +33,15 @@ A Discord bot for an English-speaking server where members submit bot-build requ
 
 - The bot uses Discord Gateway via `discord.js`; the Replit Discord account connector does not run bot gateway clients.
 - The intake bot's token is stored in Replit Secrets. Members configure credentials for their own requested bots in their own hosting secret manager; those values are never requested or relayed by this bot.
-- Request records, follow-ups, per-user command grants, the `!log` destination, and retention settings are stored in the existing PostgreSQL database.
-- The owner ID `1264183250243420211` has all bot-command access. Other users need explicit `!perm` grants; Discord roles and server permissions do not grant staff commands.
+- Request records, follow-ups, per-user command grants, delegated owner access, the `!log` destination, and retention settings are stored in the existing PostgreSQL database.
+- The owner ID `1264183250243420211` has all bot-command access. Only this primary owner can use `!owner <user-id>` to delegate every command except `!owner`; `!perm` grants narrower staff access. Discord roles and server permissions do not grant bot commands.
 
 ## Product
 
 - `!help` lists public and staff commands.
 - `!request` collects a feature description in DMs, posts it to `・requests`, then collects non-secret setup details and posts them to `・data`.
 - Staff commands are gated by the owner ID and persistent per-user grants. They include `!history`, `!log`, `!ask`, `!status`, `!assign`, `!reopen`, `!export`, `!backup`, and `!retention`.
+- `!owner <user-id>` is reserved to the primary owner and delegates all commands except `!owner`.
 
 ## User preferences
 

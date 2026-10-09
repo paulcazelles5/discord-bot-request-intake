@@ -121,6 +121,22 @@ export const discordCommandPermissionsTable = pgTable(
   ],
 );
 
+export const discordOwnerAccessTable = pgTable(
+  "discord_owner_access",
+  {
+    guildId: text("guild_id").notNull(),
+    userId: text("user_id").notNull(),
+    grantedById: text("granted_by_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "discord_owner_access_pk",
+      columns: [table.guildId, table.userId],
+    }),
+  ],
+);
+
 export const discordBotSettingsTable = pgTable("discord_bot_settings", {
   guildId: text("guild_id").primaryKey(),
   logChannelId: text("log_channel_id"),

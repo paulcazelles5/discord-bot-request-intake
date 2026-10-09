@@ -27,11 +27,14 @@ Each request has a persistent ID such as `REQ-00001`, a status, timestamps, an o
 
 Only Discord user ID `1264183250243420211` has automatic staff access. Server roles and the Manage Server permission do not grant bot command access. The owner can grant access to individual user IDs:
 
+- `!owner 123456789012345678` — grant all bot commands except `!owner`. Only the primary owner can grant this access; delegated owners cannot add other owners.
 - `!perm !history 123456789012345678` — grant one staff command.
 - `!perm all 123456789012345678` — grant all staff commands.
 - `!unperm !history 123456789012345678` — block/revoke one command (also overrides an `all` grant).
 - `!unperm all 123456789012345678` — remove all grants and overrides.
 - `!perm list [@user]` — view saved grants and overrides.
+
+Delegated owners can run every command other than `!owner`, including `!perm` and `!unperm`. Owner delegations are saved separately from staff-command grants.
 
 Available staff commands:
 

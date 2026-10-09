@@ -12,6 +12,7 @@ import {
   db,
   discordBotSettingsTable,
   discordCommandPermissionsTable,
+  discordOwnerAccessTable,
   discordRequestAttachmentsTable,
   discordRequestEventsTable,
   discordRequestFollowupsTable,
@@ -399,6 +400,37 @@ export async function isCommandAllowed(
   return grants.some(
     (grant) => grant.commandName === "all" && grant.effect === "allow",
   );
+}
+
+export async function hasOwnerAccess(
+  guildId: string,
+  userId: string,
+): Promise<boolean> {
+  const [grant] = await db
+    .select({ userId: discordOwnerAccessTable.userId })
+    .from(discordOwnerAccessTable)
+    .where(
+      and(
+        eq(discordOwnerAccessTable.guildId, guildId),
+        eq(discordOwnerAccessTable.userId, userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(grant);
+}
+
+export async function grantOwnerAccess(input: {
+  guildId: string;
+  userId: string;
+  grantedById: string;
+}): Promise<void> {
+  await db
+    .insert(discordOwnerAccessTable)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [discordOwnerAccessTable.guildId, discordOwnerAccessTable.userId],
+      set: { grantedById: input.grantedById, createdAt: new Date() },
+    });
 }
 
 export async function grantCommandPermission(input: {

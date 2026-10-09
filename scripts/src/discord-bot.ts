@@ -23,7 +23,9 @@ import {
   findRequestById,
   formatRequestId,
   getBotSettings,
+  grantOwnerAccess,
   grantCommandPermission,
+  hasOwnerAccess,
   isCommandAllowed,
   listAllRequestData,
   listAllRequestsForBackup,
@@ -200,15 +202,19 @@ async function isAuthorized(
   message: Message,
   command: (typeof STAFF_COMMANDS)[number],
 ): Promise<boolean> {
-  if (message.author.id === OWNER_ID) return true;
+  if (await hasOwnerCommandAccess(message.author.id)) return true;
   if (await isCommandAllowed(HOME_GUILD_ID, message.author.id, command)) return true;
   await message.reply({
     content:
-      `You don’t have permission to use \`${command}\`. The server owner can grant it with ` +
+      `You don’t have permission to use \`${command}\`. An owner can grant it with ` +
       `\`!perm ${command} ${message.author.id}\`.`,
     allowedMentions: noMentions,
   });
   return false;
+}
+
+async function hasOwnerCommandAccess(userId: string): Promise<boolean> {
+  return userId === OWNER_ID || hasOwnerAccess(HOME_GUILD_ID, userId);
 }
 
 async function findRequestImages(message: Message): Promise<
@@ -1259,9 +1265,9 @@ async function handlePermissionCommand(
   args: string[],
   revoke = false,
 ): Promise<void> {
-  if (message.author.id !== OWNER_ID) {
+  if (!(await hasOwnerCommandAccess(message.author.id))) {
     await message.reply({
-      content: "Only the server owner can grant or revoke command permissions.",
+      content: "Only the server owner or a delegated owner can grant or revoke command permissions.",
       allowedMentions: noMentions,
     });
     return;
@@ -1367,6 +1373,62 @@ async function handlePermissionCommand(
     content: revoke
       ? `Permission for \`${commandName}\` was revoked from <@${targetId}>.`
       : `Permission for \`${commandName}\` was granted to <@${targetId}>.`,
+    allowedMentions: noMentions,
+  });
+}
+
+async function handleOwnerCommand(message: Message, args: string[]): Promise<void> {
+  if (message.author.id !== OWNER_ID) {
+    await message.reply({
+      content: "Only the primary server owner can delegate owner commands.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  const targetId = parseUserId(args[1]);
+  if (!targetId || args.length !== 2) {
+    await message.reply({
+      content: "Usage: `!owner <user-id>`.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (targetId === OWNER_ID) {
+    await message.reply({
+      content: "The primary owner already has every command.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (!message.guild) return;
+  try {
+    const member = await message.guild.members.fetch(targetId);
+    if (member.user.bot) throw new Error("Bot accounts cannot receive owner access.");
+  } catch (error) {
+    await message.reply({
+      content:
+        error instanceof Error && error.message.includes("Bot accounts")
+          ? error.message
+          : "That user must be a member of this server.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  await grantOwnerAccess({
+    guildId: HOME_GUILD_ID,
+    userId: targetId,
+    grantedById: message.author.id,
+  });
+  await recordRequestEvent({
+    requestId: null,
+    guildId: HOME_GUILD_ID,
+    actorId: message.author.id,
+    eventType: "owner_access_granted",
+    metadata: { targetId },
+  });
+  await message.reply({
+    content: `<@${targetId}> can now use all bot commands except \`!owner\`.`,
     allowedMentions: noMentions,
   });
 }
@@ -1610,8 +1672,9 @@ function getHelpText(): string {
     "`!perm !command <user-id>` — grant one staff command\n" +
     "`!perm all <user-id>` — grant all staff commands\n" +
     "`!unperm <command|all> <user-id>` — revoke access\n" +
-    "`!perm list [@user]` — view saved permissions\n\n" +
-    "Only the server owner has automatic staff access. Staff access is assigned to individual user IDs; roles and Discord server permissions do not grant bot commands. " +
+    "`!perm list [@user]` — view saved permissions\n" +
+    "`!owner <user-id>` — grant every command except `!owner` (primary owner only)\n\n" +
+    "Only the primary server owner can delegate owner access. Delegated owners can use all commands except `!owner`; staff access can also be granted by command. Roles and Discord server permissions do not grant bot commands. " +
     "Never send tokens, passwords, client secrets, API keys, or other credentials."
   );
 }
@@ -1634,6 +1697,10 @@ async function handleGuildCommand(message: Message): Promise<void> {
   }
   if (command === "!cancel" && args.length === 1) {
     await handleCancelCommand(message);
+    return;
+  }
+  if (command === "!owner") {
+    await handleOwnerCommand(message, args);
     return;
   }
   if (command === "!perm") {
