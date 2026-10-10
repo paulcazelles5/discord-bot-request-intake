@@ -50,6 +50,7 @@ const DATA_CHANNEL_NAME = "・data";
 const MAX_REPLY_LENGTH = 1_200;
 const MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_IMAGES = 3;
+const MAX_CODE_DELIVERY_BYTES = 25 * 1024 * 1024;
 const REQUEST_LIMIT_PER_DAY = 3;
 const MEMBER_REMINDER_AFTER_MS = 48 * 60 * 60 * 1_000;
 const MEMBER_EXPIRY_AFTER_MS = 14 * 24 * 60 * 60 * 1_000;
@@ -58,6 +59,7 @@ const STAFF_COMMANDS = [
   "!history",
   "!log",
   "!ask",
+  "!code",
   "!status",
   "!assign",
   "!reopen",
@@ -1183,6 +1185,161 @@ async function handleAssignCommand(message: Message, args: string[]): Promise<vo
   });
 }
 
+async function handleCodeCommand(
+  message: Message,
+  args: string[],
+): Promise<void> {
+  const targetId = parseUserId(args[1]);
+  const attachment = [...message.attachments.values()][0];
+  if (
+    !targetId ||
+    args.length !== 2 ||
+    message.attachments.size !== 1 ||
+    !attachment ||
+    !message.guild
+  ) {
+    await message.reply({
+      content:
+        "Usage: attach one file and run `!code @user` for that member's completed request.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (attachment.size > MAX_CODE_DELIVERY_BYTES) {
+    await message.reply({
+      content: "The delivery file must be 25 MB or smaller.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const member = await message.guild.members.fetch(targetId).catch(() => null);
+  if (!member || member.user.bot) {
+    await message.reply({
+      content: "That user must be a member of this server.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const request = await findActiveRequestForMember(HOME_GUILD_ID, targetId);
+  if (!request || request.stage !== "complete") {
+    await message.reply({
+      content:
+        "That member does not have an open, fully submitted request to complete.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  let file: Buffer;
+  try {
+    const attachmentUrl = new URL(attachment.url);
+    if (
+      attachmentUrl.protocol !== "https:" ||
+      attachmentUrl.hostname !== "cdn.discordapp.com"
+    ) {
+      throw new Error("Unsupported attachment URL.");
+    }
+    const response = await fetch(attachmentUrl, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok)
+      throw new Error("The delivery file could not be downloaded.");
+    const contentLength = Number(response.headers.get("content-length"));
+    if (
+      Number.isFinite(contentLength) &&
+      contentLength > MAX_CODE_DELIVERY_BYTES
+    ) {
+      throw new Error("The delivery file must be 25 MB or smaller.");
+    }
+    file = Buffer.from(await response.arrayBuffer());
+    if (file.length > MAX_CODE_DELIVERY_BYTES) {
+      throw new Error("The delivery file must be 25 MB or smaller.");
+    }
+  } catch (error) {
+    await message.reply({
+      content:
+        error instanceof Error && error.message.includes("25 MB")
+          ? error.message
+          : "I couldn't retrieve the attached delivery file. Please attach it again and retry.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const fileName =
+    (attachment.name ?? "completed-request-file")
+      .replace(/[^\w.-]/g, "_")
+      .slice(0, 100) || "completed-request-file";
+  try {
+    await member.send({
+      content: capForDiscord(
+        `Your request ${formatRequestId(request.id)} has been completed.\n\n` +
+          `**Your request:**\n${request.description}\n\n` +
+          "The completed work is attached. Setup instructions are in the project's README file. " +
+          "If you run into any problems, please contact the staff.",
+      ),
+      files: [{ attachment: file, name: fileName }],
+      allowedMentions: noMentions,
+    });
+  } catch {
+    await message.reply({
+      content:
+        "I couldn't send the file by DM. Ask the member to enable direct messages from this server, then retry.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  let completedRequest;
+  try {
+    completedRequest = await updateRequest(request.id, {
+      status: "completed",
+      stage: "complete",
+      closedAt: new Date(),
+      lastActivityAt: new Date(),
+      reminderSentAt: null,
+    });
+  } catch {
+    await message.reply({
+      content:
+        `I sent the file to <@${targetId}>, but couldn't mark ${formatRequestId(request.id)} completed. ` +
+        `Please use \`!status ${formatRequestId(request.id)} completed\` to finish the record.`,
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  try {
+    await recordRequestEvent({
+      requestId: request.id,
+      guildId: HOME_GUILD_ID,
+      actorId: message.author.id,
+      eventType: "request_code_delivered",
+      metadata: { fileName },
+    });
+  } catch {
+    console.error(
+      `Could not record file delivery for ${formatRequestId(request.id)}.`,
+    );
+  }
+  try {
+    await postRequestUpdate(
+      completedRequest,
+      `Completed work delivered to <@${targetId}> by <@${message.author.id}>.`,
+    );
+  } catch {
+    console.error(
+      `Could not post the delivery update for ${formatRequestId(request.id)}.`,
+    );
+  }
+  await message.reply({
+    content: `I sent the file to <@${targetId}> and marked ${formatRequestId(request.id)} completed.`,
+    allowedMentions: noMentions,
+  });
+}
+
 async function handleReopenCommand(message: Message, args: string[]): Promise<void> {
   const id = parseRequestId(args[1]);
   if (!id || args.length !== 2) {
@@ -1662,6 +1819,7 @@ function getHelpText(): string {
     "`!history [page] [status] [user-id]` — DM request history (20 per page)\n" +
     "`!log #channel` — set the metadata-only request log channel\n" +
     "`!ask @user <question>` — ask one non-secret follow-up in DMs\n" +
+    "`!code @user` (attach one file) — deliver completed work and close their request\n" +
     "`!status REQ-ID received|accepted|in-progress|completed|declined [note]`\n" +
     "`!assign REQ-ID @staff-member` — assign a request\n" +
     "`!reopen REQ-ID` — reopen a closed request\n" +
@@ -1721,6 +1879,8 @@ async function handleGuildCommand(message: Message): Promise<void> {
     await handleLogCommand(message, args);
   } else if (command === "!ask") {
     await handleAskCommand(message, args);
+  } else if (command === "!code") {
+    await handleCodeCommand(message, args);
   } else if (command === "!status") {
     await handleStatusCommand(message, args);
   } else if (command === "!assign") {

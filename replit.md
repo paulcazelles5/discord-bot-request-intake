@@ -40,7 +40,7 @@ A Discord bot for an English-speaking server where members submit bot-build requ
 
 - `!help` lists public and staff commands.
 - `!request` collects a feature description in DMs, posts it to `・requests`, then collects non-secret setup details and posts them to `・data`.
-- Staff commands are gated by the owner ID and persistent per-user grants. They include `!history`, `!log`, `!ask`, `!status`, `!assign`, `!reopen`, `!export`, `!backup`, and `!retention`.
+- Staff commands are gated by the owner ID and persistent per-user grants. They include `!history`, `!log`, `!ask`, `!code`, `!status`, `!assign`, `!reopen`, `!export`, `!backup`, and `!retention`.
 - `!owner <user-id>` is reserved to the primary owner and delegates all commands except `!owner`.
 
 ## User preferences
