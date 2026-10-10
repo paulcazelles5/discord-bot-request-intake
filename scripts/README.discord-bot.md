@@ -41,6 +41,7 @@ Available staff commands:
 - `!history [page] [status] [user-id]` — DM 20 requests per page; optionally filter by status or member ID.
 - `!log #channel` — save the channel for `!request` metadata logs.
 - `!ask @user <question>` — send a custom follow-up DM about the member's current request; the non-secret answer is sent to `・data`.
+- `!code @user` with one attached file (up to 25 MB) — DM the file and request summary to the member, mark their fully submitted open request completed, and tell them setup instructions are in the project's README and to contact staff if they need help.
 - `!status REQ-ID received|accepted|in-progress|completed|declined [note]` — update status and notify the member.
 - `!assign REQ-ID @staff-member` — assign a request and notify the assignee.
 - `!reopen REQ-ID` — reopen a closed request.
