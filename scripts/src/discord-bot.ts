@@ -135,7 +135,7 @@ function requestLink(request: {
 
 function parseUserId(value: string | undefined): string | null {
   if (!value) return null;
-  const mention = value.match(/^<@!(\d{17,20})>$/);
+  const mention = value.match(/^<@!?(\d{17,20})>$/);
   const raw = value.match(/^(\d{17,20})$/);
   return mention?.[1] ?? raw?.[1] ?? null;
 }
