@@ -506,7 +506,7 @@ async function startRequest(message: Message): Promise<void> {
     new Date(Date.now() - 24 * 60 * 60 * 1_000),
   );
   const dailyLimit = await getRequestDailyLimit(HOME_GUILD_ID);
-  const hasLimitBypass = await hasRequestLimitBypass(HOME_GUILD_ID, message.author.id);
+  const hasLimitBypass = message.author.id === OWNER_ID || await hasRequestLimitBypass(HOME_GUILD_ID, message.author.id);
   if (!hasLimitBypass && requestsToday >= dailyLimit) {
     await message.reply({
       content: `You can start up to ${dailyLimit} requests per rolling 24 hours. Please try again later.`,
@@ -1925,8 +1925,8 @@ async function handleBypassCommand(message: Message, args: string[]): Promise<vo
   });
   await message.reply({
     content: remove
-      ? `Daily-limit bypass removed for <@\${targetId}>.`
-      : `<@\${targetId}> can now bypass the daily request limit. Existing-open-request checks and other safeguards still apply.`,
+      ? `Daily-limit bypass removed for <@${targetId}>.`
+      : `<@${targetId}> can now bypass the daily request limit. Existing-open-request checks and other safeguards still apply.`,
     allowedMentions: noMentions,
   });
 }
@@ -1954,7 +1954,9 @@ function getHelpText(): string {
     "`!perm all <user-id>` — grant all staff commands\n" +
     "`!unperm <command|all> <user-id>` — revoke access\n" +
     "`!perm list [@user]` — view saved permissions\n" +
-    "`!owner <user-id>` — grant every command except `!owner` (primary owner only)\n\n" +
+    "`!owner <user-id>` — grant every command except `!owner` (primary owner only)\n" +
+    "`!Daily limit <1-1000>` — set requests per user per rolling 24 hours (primary owner only)\n" +
+    "`!bypass @user` / `!bypass remove @user` — bypass or restore that user’s daily limit (primary owner only)\n\n" +
     "Only the primary server owner can delegate owner access. Delegated owners can use all commands except `!owner`; staff access can also be granted by command. Roles and Discord server permissions do not grant bot command access.\n" +
     "Never send tokens, passwords, client secrets, API keys, or other credentials."
   );
