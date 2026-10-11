@@ -755,11 +755,8 @@ async function sendResumePrompt(
   request: NonNullable<Awaited<ReturnType<typeof findPendingMemberFlowForMember>>>,
 ): Promise<void> {
   if (request.stage === "request") {
-    if (request.description) {
-      const published = request.requestMessageId
-        ? request
-        : await publishInitialRequest(request, userId, "member");
-      const updated = await updateRequest(published.id, {
+    if (request.requestMessageId && request.description) {
+      const updated = await updateRequest(request.id, {
         stage: "setup",
         status: "awaiting_member",
         lastActivityAt: new Date(),
@@ -773,6 +770,7 @@ async function sendResumePrompt(
       content:
         `Please describe the bot you want the staff team to build (${formatRequestId(request.id)}): its purpose, ` +
         "who will use it, and its main features. Do not send credentials.\n\n" +
+        (request.description ? "I’ve kept the parts you already sent. " : "") +
         "You can send several messages, then press the button below when your description is complete.",
       components: [requestNextButton(request.id)],
       allowedMentions: noMentions,
