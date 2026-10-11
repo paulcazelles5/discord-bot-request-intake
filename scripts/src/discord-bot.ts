@@ -1,10 +1,14 @@
 import {
+  ActionRowBuilder,
   AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   Client,
   GatewayIntentBits,
   Partials,
   PermissionFlagsBits,
+  type ButtonInteraction,
   type Message,
   type TextChannel,
   type ThreadChannel,
@@ -52,6 +56,7 @@ const MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_IMAGES = 3;
 const MAX_CODE_DELIVERY_BYTES = 25 * 1024 * 1024;
 const REQUEST_LIMIT_PER_DAY = 3;
+const REQUEST_NEXT_BUTTON_PREFIX = "request-next:";
 const MEMBER_REMINDER_AFTER_MS = 48 * 60 * 60 * 1_000;
 const MEMBER_EXPIRY_AFTER_MS = 14 * 24 * 60 * 60 * 1_000;
 const MAINTENANCE_INTERVAL_MS = 10 * 60 * 1_000;
@@ -458,6 +463,15 @@ async function publishSetupDetails(
   }
 }
 
+function requestNextButton(requestId: number) {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${REQUEST_NEXT_BUTTON_PREFIX}${requestId}`)
+      .setLabel("Continue to question 2")
+      .setStyle(ButtonStyle.Primary),
+  );
+}
+
 async function startRequest(message: Message): Promise<void> {
   if (!message.guild || message.guild.id !== HOME_GUILD_ID) return;
   await sendRequestLog(message);
@@ -508,7 +522,9 @@ async function startRequest(message: Message): Promise<void> {
         "Include its purpose, who will use it, its main features, and an example of how it should work.\n\n" +
         "You may attach up to three PNG, JPG, or WebP reference images. Images are shared with staff; do not upload " +
         "screenshots containing tokens, passwords, client secrets, or other credentials. Never send credentials in Discord. " +
-        "You will add any required secrets yourself in your hosting provider’s private secrets.",
+        "You will add any required secrets yourself in your hosting provider’s private secrets.\n\n" +
+        "You can send the description in several messages. When you are finished, press the button below to continue to question 2.",
+      components: [requestNextButton(request.id)],
       allowedMentions: noMentions,
     });
     await message.reply({
@@ -539,14 +555,22 @@ async function startRequest(message: Message): Promise<void> {
 async function handleRequestDetails(message: Message): Promise<void> {
   const request = await findPendingMemberFlowForMember(HOME_GUILD_ID, message.author.id);
   if (!request || request.stage !== "request") return;
+
+  if (message.attachments.size > 0) {
+    await message.reply(
+      "Please send the request description as text messages first. You can send several messages, then press **Continue to question 2** when you are finished.",
+    );
+    return;
+  }
+
   const submittedText = message.content.trim();
   if (!submittedText) {
-    await message.reply("Please include a text description of the bot you want built.");
+    await message.reply("Please send a text message, or press **Continue to question 2** when your description is complete.");
     return;
   }
   if (submittedText.length > MAX_REPLY_LENGTH) {
     await message.reply(
-      `Please shorten your message to ${MAX_REPLY_LENGTH.toLocaleString("en-US")} characters or fewer.`,
+      `Please shorten each message to ${MAX_REPLY_LENGTH.toLocaleString("en-US")} characters or fewer.`,
     );
     return;
   }
@@ -557,28 +581,45 @@ async function handleRequestDetails(message: Message): Promise<void> {
     return;
   }
 
-  let images: Awaited<ReturnType<typeof findRequestImages>>;
-  try {
-    images = await findRequestImages(message);
-  } catch (error) {
-    await message.reply(
-      error instanceof Error ? error.message : "I couldn’t accept those attachments.",
-    );
+  const combinedDescription = [request.description?.trim(), redactLikelyCredentials(submittedText)]
+    .filter(Boolean)
+    .join("\n\n");
+  if (combinedDescription.length > 20_000) {
+    await message.reply("Your request is getting too long. Please keep the combined description under 20,000 characters.");
     return;
   }
 
-  const saved = await updateRequest(request.id, {
-    description: redactLikelyCredentials(submittedText),
+  await updateRequest(request.id, {
+    description: combinedDescription,
     lastActivityAt: new Date(),
     reminderSentAt: null,
   });
+  await message.reply(
+    `Saved this part of request ${formatRequestId(request.id)}. Send another message to add more, or press **Continue to question 2** on the original bot message when you are finished.`,
+  );
+}
+
+async function handleRequestNextButton(interaction: ButtonInteraction): Promise<void> {
+  if (!interaction.customId.startsWith(REQUEST_NEXT_BUTTON_PREFIX)) return;
+  const requestId = Number(interaction.customId.slice(REQUEST_NEXT_BUTTON_PREFIX.length));
+  if (!Number.isSafeInteger(requestId) || requestId <= 0) {
+    await interaction.reply({ content: "This request button is invalid. Use `!resume` in the server.", ephemeral: true });
+    return;
+  }
+
+  const request = await findPendingMemberFlowForMember(HOME_GUILD_ID, interaction.user.id);
+  if (!request || request.id !== requestId || request.stage !== "request") {
+    await interaction.reply({ content: "This button is no longer active for your request. Use `!resume` in the server if needed.", ephemeral: true });
+    return;
+  }
+  if (!request.description?.trim()) {
+    await interaction.reply({ content: "Please send at least one message describing your bot before continuing.", ephemeral: true });
+    return;
+  }
+
+  await interaction.deferUpdate();
   try {
-    const published = await publishInitialRequest(
-      saved,
-      message.author.id,
-      message.author.username,
-      images,
-    );
+    const published = await publishInitialRequest(request, interaction.user.id, interaction.user.username);
     const movedToSetup = await updateRequest(published.id, {
       stage: "setup",
       status: "awaiting_member",
@@ -588,14 +629,16 @@ async function handleRequestDetails(message: Message): Promise<void> {
     await recordRequestEvent({
       requestId: movedToSetup.id,
       guildId: HOME_GUILD_ID,
-      actorId: message.author.id,
+      actorId: interaction.user.id,
       eventType: "request_submitted",
     });
-    await sendSetupPrompt(message.author.id, movedToSetup.id);
+    await interaction.message.edit({ components: [] });
+    await sendSetupPrompt(interaction.user.id, movedToSetup.id);
   } catch {
-    await message.reply(
-      `I saved your request ${formatRequestId(request.id)}, but couldn’t finish posting it. Use \`!resume\` in the server to retry. Do not resend credentials.`,
-    );
+    await interaction.followUp({
+      content: `I saved your request ${formatRequestId(request.id)}, but couldn’t finish posting it. Use \`!resume\` in the server to retry. Do not resend credentials.`,
+      ephemeral: true,
+    });
   }
 }
 
@@ -729,7 +772,9 @@ async function sendResumePrompt(
     await user.send({
       content:
         `Please describe the bot you want the staff team to build (${formatRequestId(request.id)}): its purpose, ` +
-        "who will use it, and its main features. Do not send credentials.",
+        "who will use it, and its main features. Do not send credentials.\n\n" +
+        "You can send several messages, then press the button below when your description is complete.",
+      components: [requestNextButton(request.id)],
       allowedMentions: noMentions,
     });
     return;
@@ -1925,6 +1970,20 @@ client.once("clientReady", () => {
   void runMaintenanceSafely();
   const timer = setInterval(() => void runMaintenanceSafely(), MAINTENANCE_INTERVAL_MS);
   timer.unref();
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton() || !interaction.customId.startsWith(REQUEST_NEXT_BUTTON_PREFIX)) return;
+  try {
+    await handleRequestNextButton(interaction);
+  } catch {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp({ content: "I couldn’t process that button. Use `!resume` in the server to retry.", ephemeral: true }).catch(() => undefined);
+    } else {
+      await interaction.reply({ content: "I couldn’t process that button. Use `!resume` in the server to retry.", ephemeral: true }).catch(() => undefined);
+    }
+    console.error("A request-step button could not be processed.");
+  }
 });
 
 client.on("messageCreate", async (message) => {
