@@ -128,6 +128,20 @@ function capForDiscord(value: string): string {
   return `${value.slice(0, 1_780)}\n\n[Message shortened to fit Discord's limit.]`;
 }
 
+function splitDiscordMessages(value: string, maxLength = 1_800): string[] {
+  const chunks: string[] = [];
+  let remaining = value.trim();
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf("\n", maxLength);
+    if (splitAt < Math.floor(maxLength * 0.4)) splitAt = remaining.lastIndexOf(" ", maxLength);
+    if (splitAt < Math.floor(maxLength * 0.4)) splitAt = maxLength;
+    chunks.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 function formatStatus(status: string): string {
   return status.replaceAll("_", " ");
 }
@@ -334,25 +348,28 @@ async function publishInitialRequest(
     existingChannel ?? (await findStaffChannel(REQUESTS_CHANNEL_NAME));
   if (!requestsChannel) throw new Error("The requests channel is unavailable.");
 
+  const requestHeader =
+    `**${formatRequestId(request.id)} | New bot request**\n` +
+    `Requested by: <@${authorId}> (\`${authorId}\`)`;
+  const fullRequestPost = `${requestHeader}\n\n${request.description}`;
+  const descriptionGoesInThread = fullRequestPost.length > 1_850;
+  const requestPost = descriptionGoesInThread
+    ? `${requestHeader}\n\nThe full request description is posted in the thread below.`
+    : fullRequestPost;
+
   let sentRequest: Message;
   if (request.requestMessageId && requestsChannel.messages) {
     try {
       sentRequest = await requestsChannel.messages.fetch(request.requestMessageId);
     } catch {
       sentRequest = await requestsChannel.send({
-        content: capForDiscord(
-          `**${formatRequestId(request.id)} | New bot request**\n` +
-            `Requested by: <@${authorId}> (\`${authorId}\`)\n\n${request.description}`,
-        ),
+        content: requestPost,
         allowedMentions: noMentions,
       });
     }
   } else {
     sentRequest = await requestsChannel.send({
-      content: capForDiscord(
-        `**${formatRequestId(request.id)} | New bot request**\n` +
-          `Requested by: <@${authorId}> (\`${authorId}\`)\n\n${request.description}`,
-      ),
+      content: requestPost,
       allowedMentions: noMentions,
     });
   }
@@ -388,6 +405,20 @@ async function publishInitialRequest(
       console.error(
         `Could not create the request thread for ${formatRequestId(request.id)}; check Create Public Threads and Send Messages in Threads.`,
       );
+    }
+  }
+
+  if (descriptionGoesInThread) {
+    const destination = thread ?? requestsChannel;
+    const chunks = splitDiscordMessages(request.description ?? "");
+    for (let index = 0; index < chunks.length; index += 1) {
+      await destination.send({
+        content:
+          (thread ? "" : `Full description for ${formatRequestId(request.id)} (thread creation failed):\n`) +
+          (chunks.length > 1 ? `**Description part ${index + 1}/${chunks.length}**\n` : "**Full request description**\n") +
+          chunks[index],
+        allowedMentions: noMentions,
+      });
     }
   }
 
