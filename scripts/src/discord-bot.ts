@@ -27,6 +27,8 @@ import {
   findRequestById,
   formatRequestId,
   getBotSettings,
+  getRequestDailyLimit,
+  hasRequestLimitBypass,
   grantOwnerAccess,
   grantCommandPermission,
   hasOwnerAccess,
@@ -40,6 +42,8 @@ import {
   recordRequestEvent,
   revokeCommandPermission,
   setBotSettings,
+  setRequestDailyLimit,
+  setRequestLimitBypass,
   setFollowupStatus,
   updateRequest,
   verifyStoreReady,
@@ -55,7 +59,6 @@ const MAX_REPLY_LENGTH = 1_200;
 const MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_IMAGES = 3;
 const MAX_CODE_DELIVERY_BYTES = 25 * 1024 * 1024;
-const REQUEST_LIMIT_PER_DAY = 3;
 const REQUEST_NEXT_BUTTON_PREFIX = "request-next:";
 const MEMBER_REMINDER_AFTER_MS = 48 * 60 * 60 * 1_000;
 const MEMBER_EXPIRY_AFTER_MS = 14 * 24 * 60 * 60 * 1_000;
@@ -502,9 +505,11 @@ async function startRequest(message: Message): Promise<void> {
     message.author.id,
     new Date(Date.now() - 24 * 60 * 60 * 1_000),
   );
-  if (requestsToday >= REQUEST_LIMIT_PER_DAY) {
+  const dailyLimit = await getRequestDailyLimit(HOME_GUILD_ID);
+  const hasLimitBypass = await hasRequestLimitBypass(HOME_GUILD_ID, message.author.id);
+  if (!hasLimitBypass && requestsToday >= dailyLimit) {
     await message.reply({
-      content: `You can start up to ${REQUEST_LIMIT_PER_DAY} requests per 24 hours. Please try again later.`,
+      content: `You can start up to ${dailyLimit} requests per rolling 24 hours. Please try again later.`,
       allowedMentions: noMentions,
     });
     return;
@@ -1851,6 +1856,81 @@ async function runMaintenanceSafely(): Promise<void> {
   }
 }
 
+async function handleDailyLimitCommand(message: Message, args: string[]): Promise<void> {
+  if (message.author.id !== OWNER_ID) {
+    await message.reply({ content: "Only the primary bot owner can change the daily request limit.", allowedMentions: noMentions });
+    return;
+  }
+  if (args.length === 2 && args[1]?.toLowerCase() === "limit") {
+    const current = await getRequestDailyLimit(HOME_GUILD_ID);
+    await message.reply({
+      content: `Current limit: **${current} requests per user per rolling 24 hours**. Use \`!Daily limit <1-1000>\` to change it.`,
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (args.length !== 3 || args[1]?.toLowerCase() !== "limit") {
+    await message.reply({ content: "Usage: `!Daily limit <1-1000>`.", allowedMentions: noMentions });
+    return;
+  }
+  const limit = Number(args[2]);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    await message.reply({ content: "Choose a whole number between 1 and 1000.", allowedMentions: noMentions });
+    return;
+  }
+  await setRequestDailyLimit(HOME_GUILD_ID, limit);
+  await recordRequestEvent({
+    requestId: null,
+    guildId: HOME_GUILD_ID,
+    actorId: message.author.id,
+    eventType: "daily_request_limit_changed",
+    metadata: { limit },
+  });
+  await message.reply({
+    content: `Daily request limit set to **${limit} per user per rolling 24 hours**.`,
+    allowedMentions: noMentions,
+  });
+}
+
+async function handleBypassCommand(message: Message, args: string[]): Promise<void> {
+  if (message.author.id !== OWNER_ID) {
+    await message.reply({ content: "Only the primary bot owner can manage request-limit bypasses.", allowedMentions: noMentions });
+    return;
+  }
+  const remove = args[1]?.toLowerCase() === "remove";
+  const targetId = parseUserId(args[remove ? 2 : 1]);
+  if (!targetId || args.length !== (remove ? 3 : 2)) {
+    await message.reply({
+      content: "Usage: `!bypass @user` or `!bypass remove @user`.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+  if (targetId === OWNER_ID) {
+    await message.reply({ content: "The primary owner already bypasses the daily request limit.", allowedMentions: noMentions });
+    return;
+  }
+  await setRequestLimitBypass({
+    guildId: HOME_GUILD_ID,
+    userId: targetId,
+    grantedById: message.author.id,
+    enabled: !remove,
+  });
+  await recordRequestEvent({
+    requestId: null,
+    guildId: HOME_GUILD_ID,
+    actorId: message.author.id,
+    eventType: remove ? "request_limit_bypass_revoked" : "request_limit_bypass_granted",
+    metadata: { userId: targetId },
+  });
+  await message.reply({
+    content: remove
+      ? `Daily-limit bypass removed for <@\${targetId}>.`
+      : `<@\${targetId}> can now bypass the daily request limit. Existing-open-request checks and other safeguards still apply.`,
+    allowedMentions: noMentions,
+  });
+}
+
 function getHelpText(): string {
   return (
     "**Bot request commands**\n" +
@@ -1898,6 +1978,14 @@ async function handleGuildCommand(message: Message): Promise<void> {
   }
   if (command === "!cancel" && args.length === 1) {
     await handleCancelCommand(message);
+    return;
+  }
+  if (command === "!daily") {
+    await handleDailyLimitCommand(message, args);
+    return;
+  }
+  if (command === "!bypass") {
+    await handleBypassCommand(message, args);
     return;
   }
   if (command === "!owner") {
