@@ -7,6 +7,7 @@ import {
   lt,
   notInArray,
   or,
+  sql,
 } from "drizzle-orm";
 import {
   db,
@@ -45,6 +46,74 @@ export interface RequestFilters {
 
 export async function verifyStoreReady(): Promise<void> {
   await db.select({ id: discordRequestsTable.id }).from(discordRequestsTable).limit(1);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS discord_bot_request_controls (
+      guild_id text PRIMARY KEY,
+      daily_limit integer NOT NULL DEFAULT 3 CHECK (daily_limit BETWEEN 1 AND 1000),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS discord_bot_request_bypasses (
+      guild_id text NOT NULL,
+      user_id text NOT NULL,
+      granted_by_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (guild_id, user_id)
+    )
+  `);
+}
+
+export async function getRequestDailyLimit(guildId: string): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT daily_limit
+    FROM discord_bot_request_controls
+    WHERE guild_id = ${guildId}
+    LIMIT 1
+  `);
+  const row = (result as unknown as { rows?: Array<{ daily_limit: number | string }> }).rows?.[0];
+  return row ? Number(row.daily_limit) : 3;
+}
+
+export async function setRequestDailyLimit(guildId: string, limit: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO discord_bot_request_controls (guild_id, daily_limit, updated_at)
+    VALUES (${guildId}, ${limit}, now())
+    ON CONFLICT (guild_id)
+    DO UPDATE SET daily_limit = EXCLUDED.daily_limit, updated_at = now()
+  `);
+}
+
+export async function hasRequestLimitBypass(guildId: string, userId: string): Promise<boolean> {
+  const result = await db.execute(sql`
+    SELECT user_id
+    FROM discord_bot_request_bypasses
+    WHERE guild_id = ${guildId} AND user_id = ${userId}
+    LIMIT 1
+  `);
+  const rows = (result as unknown as { rows?: Array<{ user_id: string }> }).rows;
+  return Boolean(rows?.length);
+}
+
+export async function setRequestLimitBypass(input: {
+  guildId: string;
+  userId: string;
+  grantedById: string;
+  enabled: boolean;
+}): Promise<void> {
+  if (!input.enabled) {
+    await db.execute(sql`
+      DELETE FROM discord_bot_request_bypasses
+      WHERE guild_id = ${input.guildId} AND user_id = ${input.userId}
+    `);
+    return;
+  }
+  await db.execute(sql`
+    INSERT INTO discord_bot_request_bypasses (guild_id, user_id, granted_by_id)
+    VALUES (${input.guildId}, ${input.userId}, ${input.grantedById})
+    ON CONFLICT (guild_id, user_id)
+    DO UPDATE SET granted_by_id = EXCLUDED.granted_by_id, created_at = now()
+  `);
 }
 
 export async function createRequest(input: {
@@ -199,7 +268,7 @@ export async function countRecentRequests(
         gte(discordRequestsTable.createdAt, since),
       ),
     )
-    .limit(4);
+    .limit(1_001);
   return rows.length;
 }
 
