@@ -71,7 +71,8 @@ export async function getRequestDailyLimit(guildId: string): Promise<number> {
     WHERE guild_id = ${guildId}
     LIMIT 1
   `);
-  const row = (result as unknown as { rows?: Array<{ daily_limit: number | string }> }).rows?.[0];
+  const rows = (Array.isArray(result) ? result : (result as unknown as { rows?: Array<{ daily_limit: number | string }> }).rows) ?? [];
+  const row = rows[0] as { daily_limit: number | string } | undefined;
   return row ? Number(row.daily_limit) : 3;
 }
 
@@ -91,8 +92,8 @@ export async function hasRequestLimitBypass(guildId: string, userId: string): Pr
     WHERE guild_id = ${guildId} AND user_id = ${userId}
     LIMIT 1
   `);
-  const rows = (result as unknown as { rows?: Array<{ user_id: string }> }).rows;
-  return Boolean(rows?.length);
+  const rows = (Array.isArray(result) ? result : (result as unknown as { rows?: Array<{ user_id: string }> }).rows) ?? [];
+  return rows.length > 0;
 }
 
 export async function setRequestLimitBypass(input: {
