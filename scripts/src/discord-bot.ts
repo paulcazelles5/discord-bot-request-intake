@@ -2003,7 +2003,10 @@ async function handleGuildCommand(message: Message): Promise<void> {
   const args = message.content.trim().split(/\s+/);
   const command = args[0]?.toLowerCase();
   if (command === "!help") {
-    await message.reply({ content: getHelpText(), allowedMentions: noMentions });
+    // Discord messages are limited to 2,000 characters; split the full help into safe chunks.
+    for (const chunk of splitDiscordMessages(getHelpText(), 1_800)) {
+      await message.reply({ content: chunk, allowedMentions: noMentions });
+    }
     return;
   }
   if (command === "!request" && args.length === 1) {
