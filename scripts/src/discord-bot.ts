@@ -49,6 +49,7 @@ import {
   verifyStoreReady,
   type RequestStatus,
 } from "./request-store.js";
+import { handleUtilityCommand, isUtilityCommand } from "./utility-commands.js";
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const HOME_GUILD_ID = "1499704751481294878";
@@ -1988,6 +1989,10 @@ function getHelpText(): string {
     "`!owner <user-id>` — grant every command except `!owner` (primary owner only)\n" +
     "`!Daily limit <1-1000>` — set requests per user per rolling 24 hours (primary owner only)\n" +
     "`!bypass @user` / `!bypass remove @user` — bypass or restore that user’s daily limit (primary owner only)\n\n" +
+    "**Utilities** (requires the corresponding Discord moderation permission)\\n" +
+    "`!ban @user [reason]`, `!unban <user ID> [reason]`, `!kick @user [reason]`\\n" +
+    "`!mute @user <duration> [reason]`, `!unmute @user`, `!timeout @user <duration> [reason]`, `!untimeout @user`\\n" +
+    "`!clear <1-100>` / `!purge <1-100>`, `!lock`, `!unlock`, `!slowmode <0-21600>`\\n\\n" +
     "Only the primary server owner can delegate owner access. Delegated owners can use all commands except `!owner`; staff access can also be granted by command. Roles and Discord server permissions do not grant bot command access.\n" +
     "Never send tokens, passwords, client secrets, API keys, or other credentials."
   );
@@ -2033,7 +2038,7 @@ async function handleGuildCommand(message: Message): Promise<void> {
     await handlePermissionCommand(message, args, true);
     return;
   }
-  if (!(STAFF_COMMANDS as readonly string[]).includes(command ?? "")) return;
+  if (isUtilityCommand(command ?? "")) {\n    await handleUtilityCommand(message, args, command ?? "");\n    return;\n  }\n  if (!(STAFF_COMMANDS as readonly string[]).includes(command ?? "")) return;
   if (!STAFF_COMMANDS.includes(command as (typeof STAFF_COMMANDS)[number])) return;
   if (!(await isAuthorized(message, command as (typeof STAFF_COMMANDS)[number]))) return;
 
