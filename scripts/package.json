@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
-    "discord-bot": "tsx ./src/discord-bot.ts",
+    "assemble-bot": "node ./src/assemble-bot.mjs",
+    "discord-bot": "node ./src/assemble-bot.mjs && tsx ./src/discord-bot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
