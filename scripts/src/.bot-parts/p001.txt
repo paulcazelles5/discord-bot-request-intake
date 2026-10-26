@@ -1,0 +1,75 @@
+lace(/\bmfa\.[A-Za-z\d_-]{20,}\b/gi, "[REDACTED CREDENTIAL]")
+    .replace(
+      /\b[A-Za-z\d_-]{20,}\.[A-Za-z\d_-]{5,}\.[A-Za-z\d_-]{20,}\b/g,
+      "[REDACTED CREDENTIAL]",
+    )
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED CREDENTIAL]")
+    .replace(
+      /\b(bot[_ -]?token|token|client[_ -]?secret|api[_ -]?key|password|authorization)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      "$1: [REDACTED CREDENTIAL]",
+    );
+}
+
+function containsLikelyCredential(value: string): boolean {
+  return redactLikelyCredentials(value) !== value;
+}
+
+function capForDiscord(value: string): string {
+  if (value.length <= 1_850) return value;
+  return `${value.slice(0, 1_780)}\n\n[Message shortened to fit Discord's limit.]`;
+}
+
+function splitDiscordMessages(value: string, maxLength = 1_800): string[] {
+  const chunks: string[] = [];
+  let remaining = value.trim();
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf("\n", maxLength);
+    if (splitAt < Math.floor(maxLength * 0.4)) splitAt = remaining.lastIndexOf(" ", maxLength);
+    if (splitAt < Math.floor(maxLength * 0.4)) splitAt = maxLength;
+    chunks.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function formatStatus(status: string): string {
+  return status.replaceAll("_", " ");
+}
+
+function requestLink(request: {
+  guildId: string;
+  requestChannelId: string | null;
+  requestMessageId: string | null;
+}): string {
+  if (!request.requestChannelId || !request.requestMessageId) return "not posted yet";
+  return `https://discord.com/channels/${request.guildId}/${request.requestChannelId}/${request.requestMessageId}`;
+}
+
+function parseUserId(value: string | undefined): string | null {
+  if (!value) return null;
+  const mention = value.match(/^<@!?(\d{17,20})>$/);
+  const raw = value.match(/^(\d{17,20})$/);
+  return mention?.[1] ?? raw?.[1] ?? null;
+}
+
+async function findStaffChannel(name: string): Promise<TextChannel | null> {
+  const guild = await client.guilds.fetch(HOME_GUILD_ID);
+  await guild.channels.fetch();
+  const channel = guild.channels.cache.find(
+    (candidate) =>
+      candidate?.type === ChannelType.GuildText && candidate.name === name,
+  );
+  return channel?.type === ChannelType.GuildText ? channel : null;
+}
+
+async function fetchGuildTextChannel(channelId: string): Promise<TextChannel | null> {
+  const guild = await client.guilds.fetch(HOME_GUILD_ID);
+  const channel = await guild.channels.fetch(channelId);
+  return channel?.type === ChannelType.GuildText ? channel : null;
+}
+
+async function fetchThread(threadId: string | null): Promise<ThreadChannel | null> {
+  if (!threadId) return null;
+  const guild = await client.guilds.fetch(HOME_GUILD_ID);
+  con
