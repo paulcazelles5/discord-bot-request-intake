@@ -1,0 +1,77 @@
+st channel = await guild.channels.fetch(threadId);
+  return channel?.isThread() ? channel : null;
+}
+
+async function sendLongDm(userId: string, content: string): Promise<void> {
+  const user = await client.users.fetch(userId);
+  const chunks: string[] = [];
+  let remaining = content;
+  while (remaining.length > 1_850) {
+    let splitAt = remaining.lastIndexOf("\n", 1_850);
+    if (splitAt < 700) splitAt = 1_850;
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  if (remaining) chunks.push(remaining);
+  for (const chunk of chunks) {
+    await user.send({ content: chunk, allowedMentions: noMentions });
+  }
+}
+
+async function sendRequestLog(message: Message): Promise<void> {
+  try {
+    const settings = await getBotSettings(HOME_GUILD_ID);
+    if (!settings?.logChannelId) return;
+    const channel = await fetchGuildTextChannel(settings.logChannelId);
+    if (!channel) throw new Error("Configured log channel is not a text channel.");
+    const timestamp = Math.floor(message.createdTimestamp / 1_000);
+    const displayName = message.member?.displayName ?? message.author.username;
+    await channel.send({
+      content:
+        `**New bot request started**\n` +
+        `Member: ${displayName} (<@${message.author.id}> / \`${message.author.id}\`)\n` +
+        `Time: <t:${timestamp}:F>\n` +
+        `Command channel: <#${message.channelId}>`,
+      allowedMentions: noMentions,
+    });
+  } catch {
+    console.error("Could not post request activity to the configured log channel.");
+  }
+}
+
+async function isAuthorized(
+  message: Message,
+  command: (typeof STAFF_COMMANDS)[number],
+): Promise<boolean> {
+  if (await hasOwnerCommandAccess(message.author.id)) return true;
+  if (await isCommandAllowed(HOME_GUILD_ID, message.author.id, command)) return true;
+  await message.reply({
+    content:
+      `You don’t have permission to use \`${command}\`. An owner can grant it with ` +
+      `\`!perm ${command} ${message.author.id}\`.`,
+    allowedMentions: noMentions,
+  });
+  return false;
+}
+
+async function hasOwnerCommandAccess(userId: string): Promise<boolean> {
+  return userId === OWNER_ID || hasOwnerAccess(HOME_GUILD_ID, userId);
+}
+
+async function findRequestImages(message: Message): Promise<
+  Array<{
+    url: string;
+    fileName: string;
+    contentType: string;
+    byteSize: number;
+  }>
+> {
+  const attachments = [...message.attachments.values()];
+  if (attachments.length > MAX_REQUEST_IMAGES) {
+    throw new Error(`Please attach no more than ${MAX_REQUEST_IMAGES} reference images.`);
+  }
+  const images = attachments.map((attachment) => {
+    const contentType = attachment.contentType?.split(";")[0]?.toLowerCase();
+    if (
+      !contentType ||
+      !["image/png", "image/jpeg", "image/webp"].includes(contentType
