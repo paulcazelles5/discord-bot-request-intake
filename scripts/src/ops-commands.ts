@@ -5,13 +5,11 @@ import {
 import {
   countRequestsByStatus,
   createFollowup,
-  findPendingFollowupForRequest,
   findRequestById,
   formatRequestId,
   listRequests,
   parseRequestId,
   recordRequestEvent,
-  setFollowupStatus,
   updateRequest,
   verifyStoreReady,
 } from "./request-store.js";
@@ -289,7 +287,7 @@ export async function handleHealthcheckCommand(
     `• Reachability: ${groqReachable}${groqMs != null ? ` (${groqMs} ms)` : ""}`,
     `• Session calls: **${groqStats.calls}** (ok ${groqStats.successes} / fail ${groqStats.failures})`,
   ];
-  await message.reply({ content: lines.join("joinjoin("\n").slice(0, 1900), allowedMentions: noMentions });
+  await message.reply({ content: lines.join("\n").slice(0, 1900), allowedMentions: noMentions });
 }
 
 export async function handleMyRequestsCommand(
@@ -319,14 +317,18 @@ export async function handleMyRequestsCommand(
   await message.reply({ content: lines.join("\n").slice(0, 1900), allowedMentions: noMentions });
 }
 
-/** Member J+1/5/9/10 follow-up schedule + staff thread nudges (full impl requires store helpers). */
+/** Member follow-up schedule + staff thread nudges (extended when store helpers present). */
 export async function processOpsMaintenance(_deps: {
   client: Client;
   guildId: string;
   postRequestUpdate?: (request: { id: number }, text: string) => Promise<void>;
-  fetchThread?: (threadId: string | null) => Promise<{ send: (opts: unknown) => Promise<unknown>; setArchived?: (v: boolean) => Promise<unknown>; archived?: boolean } | null>;
+  fetchThread?: (threadId: string | null) => Promise<{
+    send: (opts: unknown) => Promise<unknown>;
+    setArchived?: (v: boolean) => Promise<unknown>;
+    archived?: boolean;
+  } | null>;
 }): Promise<void> {
-  // Full schedule wired when request-store helpers are present; safe no-op otherwise.
+  // Safe no-op until advanced store helpers are deployed.
 }
 
 export async function askMemberForInfo(input: {
@@ -354,7 +356,10 @@ export async function askMemberForInfo(input: {
   });
 
   if (input.postRequestUpdate) {
-    await input.postRequestUpdate(request, `❓ **Info demandée** par <@${input.askedById}>:\n${input.question}`);
+    await input.postRequestUpdate(
+      request,
+      `❓ **Info demandée** par <@${input.askedById}>:\n${input.question}`,
+    );
   }
 
   try {
@@ -367,7 +372,7 @@ export async function askMemberForInfo(input: {
       allowedMentions: noMentions,
     });
   } catch {
-    // DM closed — staff will see the follow-up in-panel / thread
+    // DM closed
   }
 
   return { ok: true, requestId: request.id };
