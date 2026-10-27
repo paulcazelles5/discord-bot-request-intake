@@ -31,8 +31,22 @@ const LIST_REFRESH_MS = 30_000;
 const LIST_BUTTON_PREFIX = "request-list:";
 const noMentions = { parse: [] as const };
 
+const STATUS_COLORS: Record<string, string> = {
+  awaiting_member: "🟠",
+  waiting_on_member: "🟠",
+  received: "🟡",
+  needs_info: "⚪",
+  accepted: "🟣",
+  in_progress: "🔵",
+  completed: "🟢",
+  declined: "🔴",
+  cancelled: "⚫",
+  expired: "🟤",
+};
+
 function formatStatus(status: string): string {
-  return status.replaceAll("_", " ");
+  const emoji = STATUS_COLORS[status] ?? "▪️";
+  return `${emoji} ${status.replaceAll("_", " ")}`;
 }
 
 export type ListBoardDeps = {
