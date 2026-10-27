@@ -4,10 +4,15 @@ import {
 } from "discord.js";
 import {
   countRequestsByStatus,
+  createFollowup,
+  findPendingFollowupForRequest,
   findRequestById,
   formatRequestId,
   listRequests,
   parseRequestId,
+  recordRequestEvent,
+  setFollowupStatus,
+  updateRequest,
   verifyStoreReady,
 } from "./request-store.js";
 
@@ -327,4 +332,91 @@ export async function handleMyRequestsCommand(
     content: `**Your requests** (${rows.length})\n${lines.join("\n")}`.slice(0, 1900),
     allowedMentions: noMentions,
   });
+}
+
+/** Staff/member nudge maintenance — full schedule lands with request-store helpers. */
+export async function processOpsMaintenance(_deps: {
+  client: Client;
+  guildId: string;
+  botUserId: string;
+  postInRequestThread: (
+    request: { id: number; threadId: string | null; memberId: string; assignedToId: string | null },
+    content: string,
+    pingUserIds?: string[],
+  ) => Promise<void>;
+  notifyMember: (request: { id: number; memberId: string }, content: string) => Promise<void>;
+}): Promise<void> {
+  // Intentionally lightweight until advanced store helpers are deployed.
+}
+
+/** Shared ask-info used by the panel modal (and optionally !ask). */
+export async function askMemberForInfo(input: {
+  guildId: string;
+  requestId: number;
+  askedById: string;
+  question: string;
+  client: Client;
+  postRequestUpdate: (request: { id: number }, text: string) => Promise<void>;
+}): Promise<{ ok: true; requestId: number } | { ok: false; error: string }> {
+  const question = input.question.trim();
+  if (!question || question.length > 1200) {
+    return { ok: false, error: "La question doit faire entre 1 et 1200 caractères." };
+  }
+  const request = await findRequestById(input.guildId, input.requestId);
+  if (!request) {
+    return { ok: false, error: `Requête **${formatRequestId(input.requestId)}** introuvable.` };
+  }
+  if (["completed", "declined", "cancelled", "expired"].includes(request.status)) {
+    return { ok: false, error: "Cette requête est déjà fermée." };
+  }
+  if (request.stage !== "complete" && request.stage !== "followup") {
+    return { ok: false, error: "Le membre n'a pas encore soumis sa requête (stage incomplet)." };
+  }
+  if (await findPendingFollowupForRequest(request.id)) {
+    return { ok: false, error: "Il y a déjà une question en attente pour cette requête." };
+  }
+
+  const followup = await createFollowup({
+    requestId: request.id,
+    askedById: input.askedById,
+    question,
+  });
+  await updateRequest(request.id, {
+    status: "waiting_on_member",
+    stage: "followup",
+    lastActivityAt: new Date(),
+    reminderSentAt: null,
+  });
+
+  try {
+    const user = await input.client.users.fetch(request.memberId);
+    await user.send({
+      content:
+        `L'équipe a une question concernant **${formatRequestId(request.id)}** :\n\n` +
+        `${question}\n\n` +
+        `Réponds à ce DM avec des infos non secrètes uniquement. Ne partage jamais de tokens, mots de passe ou clés API.`,
+      allowedMentions: noMentions,
+    });
+  } catch {
+    await setFollowupStatus(followup.id, "failed");
+    await updateRequest(request.id, {
+      status: request.assignedToId ? "in_progress" : "received",
+      stage: "complete",
+      lastActivityAt: new Date(),
+    });
+    return { ok: false, error: "Impossible d'envoyer le DM au membre (DMs fermés ?)." };
+  }
+
+  await recordRequestEvent({
+    requestId: request.id,
+    guildId: input.guildId,
+    actorId: input.askedById,
+    eventType: "followup_asked",
+    metadata: { followupId: followup.id, source: "panel" },
+  });
+  await input.postRequestUpdate(
+    request,
+    `Demande d'infos envoyée à <@${request.memberId}> par <@${input.askedById}>.`,
+  );
+  return { ok: true, requestId: request.id };
 }
