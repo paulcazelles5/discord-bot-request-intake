@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   desc,
   eq,
   gte,
@@ -42,6 +43,8 @@ export interface RequestFilters {
   memberId?: string;
   page?: number;
   pageSize?: number;
+  /** newest (default) | oldest | status */
+  sort?: "newest" | "oldest" | "status";
 }
 
 export async function verifyStoreReady(): Promise<void> {
@@ -245,13 +248,66 @@ export async function listRequests(
   const conditions = [eq(discordRequestsTable.guildId, guildId)];
   if (filters.status) conditions.push(eq(discordRequestsTable.status, filters.status));
   if (filters.memberId) conditions.push(eq(discordRequestsTable.memberId, filters.memberId));
+  const sort = filters.sort ?? "newest";
+  const pageSize = filters.pageSize ?? 10;
+  const offset = ((filters.page ?? 1) - 1) * pageSize;
+
+  if (sort === "oldest") {
+    return db
+      .select()
+      .from(discordRequestsTable)
+      .where(and(...conditions))
+      .orderBy(asc(discordRequestsTable.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+  }
+  if (sort === "status") {
+    return db
+      .select()
+      .from(discordRequestsTable)
+      .where(and(...conditions))
+      .orderBy(asc(discordRequestsTable.status), desc(discordRequestsTable.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+  }
   return db
     .select()
     .from(discordRequestsTable)
     .where(and(...conditions))
     .orderBy(desc(discordRequestsTable.createdAt))
-    .limit(filters.pageSize ?? 10)
-    .offset(((filters.page ?? 1) - 1) * (filters.pageSize ?? 10));
+    .limit(pageSize)
+    .offset(offset);
+}
+
+export async function countRequests(
+  guildId: string,
+  filters: Pick<RequestFilters, "status" | "memberId"> = {},
+): Promise<number> {
+  const conditions = [eq(discordRequestsTable.guildId, guildId)];
+  if (filters.status) conditions.push(eq(discordRequestsTable.status, filters.status));
+  if (filters.memberId) conditions.push(eq(discordRequestsTable.memberId, filters.memberId));
+  const rows = await db
+    .select({ id: discordRequestsTable.id })
+    .from(discordRequestsTable)
+    .where(and(...conditions));
+  return rows.length;
+}
+
+export async function countRequestsByStatus(
+  guildId: string,
+): Promise<Record<string, number>> {
+  const rows = await db
+    .select({
+      status: discordRequestsTable.status,
+      id: discordRequestsTable.id,
+    })
+    .from(discordRequestsTable)
+    .where(eq(discordRequestsTable.guildId, guildId));
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    counts[row.status] = (counts[row.status] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export async function countRecentRequests(
@@ -670,4 +726,3 @@ async function findRequestByIdForExport(guildId: string, requestId: number) {
     .limit(1);
   return request ?? null;
 }
-
