@@ -3,21 +3,30 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type ButtonInteraction,
   type Client,
+  type ModalSubmitInteraction,
   type TextChannel,
 } from "discord.js";
 import {
   countRequests,
   formatRequestId,
   listRequests,
+  parseRequestId,
   type RequestStatus,
 } from "./request-store.js";
+import { askMemberForInfo } from "./ops-commands.js";
 
 const LIST_CHANNEL_NAME = "・list";
 const LIST_PAGE_SIZE = 12;
 const LIST_REFRESH_MS = 30_000;
 const LIST_BUTTON_PREFIX = "request-list:";
+const ASK_INFO_MODAL_ID = "request-list:askinfo-modal";
+const ASK_INFO_REQ_FIELD = "requestId";
+const ASK_INFO_Q_FIELD = "question";
 const noMentions = { parse: [] as const };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -60,6 +69,8 @@ function formatStatus(status: string): string {
 export type ListBoardDeps = {
   client: Client;
   guildId: string;
+  isStaff?: (userId: string) => Promise<boolean>;
+  postRequestUpdate?: (request: { id: number }, text: string) => Promise<void>;
 };
 
 let deps: ListBoardDeps | null = null;
@@ -118,6 +129,10 @@ function buildButtons(page: number, totalPages: number) {
       .setCustomId(`${LIST_BUTTON_PREFIX}mine`)
       .setLabel("Mes requêtes")
       .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`${LIST_BUTTON_PREFIX}askinfo`)
+      .setLabel("Demander infos")
+      .setStyle(ButtonStyle.Danger),
   );
 
   return [rowNav, rowFilter];
@@ -293,6 +308,39 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
     return;
   }
 
+  if (action === "askinfo") {
+    const staffOk = deps.isStaff ? await deps.isStaff(interaction.user.id) : false;
+    if (!staffOk) {
+      await interaction.reply({
+        content: "Seul le staff peut demander des informations.",
+        ephemeral: true,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    const modal = new ModalBuilder()
+      .setCustomId(ASK_INFO_MODAL_ID)
+      .setTitle("Demander des infos");
+    const reqInput = new TextInputBuilder()
+      .setCustomId(ASK_INFO_REQ_FIELD)
+      .setLabel("ID de la requête (ex: REQ-00042 ou 42)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(20);
+    const qInput = new TextInputBuilder()
+      .setCustomId(ASK_INFO_Q_FIELD)
+      .setLabel("Question pour le membre")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(1200);
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(reqInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(qInput),
+    );
+    await interaction.showModal(modal);
+    return;
+  }
+
   if (action === "filter") {
     currentFilterIndex = (currentFilterIndex + 1) % FILTER_CYCLE.length;
     currentPage = 1;
@@ -320,8 +368,77 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
   }
 }
 
-export function startListBoard(client: Client, guildId: string): void {
-  deps = { client, guildId };
+export function isListBoardModal(customId: string): boolean {
+  return customId === ASK_INFO_MODAL_ID;
+}
+
+export async function handleListBoardModal(interaction: ModalSubmitInteraction): Promise<void> {
+  if (!deps || !isListBoardModal(interaction.customId)) return;
+
+  const staffOk = deps.isStaff ? await deps.isStaff(interaction.user.id) : false;
+  if (!staffOk) {
+    await interaction.reply({
+      content: "Seul le staff peut demander des informations.",
+      ephemeral: true,
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const rawId = interaction.fields.getTextInputValue(ASK_INFO_REQ_FIELD).trim();
+  const question = interaction.fields.getTextInputValue(ASK_INFO_Q_FIELD).trim();
+  const requestId = parseRequestId(rawId);
+  if (!requestId) {
+    await interaction.reply({
+      content: "ID de requête invalide. Exemple : `REQ-00042` ou `42`.",
+      ephemeral: true,
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const postUpdate =
+    deps.postRequestUpdate ??
+    (async () => {
+      /* no-op if not wired */
+    });
+
+  const result = await askMemberForInfo({
+    guildId: deps.guildId,
+    requestId,
+    askedById: interaction.user.id,
+    question,
+    client: deps.client,
+    postRequestUpdate: postUpdate,
+  });
+
+  if (!result.ok) {
+    await interaction.editReply({ content: result.error });
+    return;
+  }
+
+  await interaction.editReply({
+    content: `Question envoyée au membre pour **${formatRequestId(result.requestId)}**. Sa réponse arrivera dans \`・data\`.`,
+  });
+  notifyListBoardChanged();
+}
+
+export function startListBoard(
+  client: Client,
+  guildId: string,
+  extras?: {
+    isStaff?: (userId: string) => Promise<boolean>;
+    postRequestUpdate?: (request: { id: number }, text: string) => Promise<void>;
+  },
+): void {
+  deps = {
+    client,
+    guildId,
+    isStaff: extras?.isStaff,
+    postRequestUpdate: extras?.postRequestUpdate,
+  };
   void refreshListBoard(1);
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => void refreshListBoard(), LIST_REFRESH_MS);
