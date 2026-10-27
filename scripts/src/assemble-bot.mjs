@@ -261,7 +261,7 @@ if (!content.includes("ChannelType.PrivateThread")) {
     "          `Discussion privée pour ${formatRequestId(request.id)}.\\n` +",
     "          `Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n` +",
     "          `Status: awaiting member setup details.`,",
-    "        allowedMentions: { users: [author contId] },",
+    "        allowedMentions: { users: [authorId] },",
     "      });",
   ].join("\n");
   if (content.includes(threadOld)) {
@@ -275,3 +275,7 @@ writeFileSync(outFile, content);
 console.log(
   `Assembled ${outFile} (${content.length} bytes) from ${files.length} compressed parts (moderation stripped, ops injected).`,
 );
+console.log("Has ops-commands import:", content.includes("ops-commands.js"));
+console.log("Has !find handler:", content.includes('command === "!find"'));
+console.log("Has !healthcheck help:", content.includes("!healthcheck"));
+console.log("Has recordGroqCall:", content.includes("recordGroqCall"));
