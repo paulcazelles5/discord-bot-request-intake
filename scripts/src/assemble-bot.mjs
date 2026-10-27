@@ -18,7 +18,6 @@ const b64 = files
 const compressed = Buffer.from(b64, "base64");
 let content = inflateSync(compressed).toString("utf8");
 
-// Remove moderation utility commands (import, routing, help section)
 content = content.replace(
   /import\s*\{\s*handleUtilityCommand\s*,\s*isUtilityCommand\s*\}\s*from\s*["']\.\/utility-commands\.js["']\s*;\s*/g,
   "",
@@ -112,7 +111,6 @@ if (!content.includes("recordGroqCall({")) {
   try {
 `,
   );
-
   content = content.replace(
     /(\/\/ Strip accidental markdown fences if the model still adds them\n  return content\n    \.replace\(\/\^```\(\?:js\|javascript\)\?\\n\?\/i, ""\)\n    \.replace\(\/\\n\?```\$\/i, ""\)\n    \.trim\(\);\n\})/,
     `// Strip accidental markdown fences if the model still adds them
@@ -131,7 +129,6 @@ if (!content.includes("recordGroqCall({")) {
   );
 }
 
-// Modal + maintenance wiring
 if (!content.includes("handleListBoardModal(interaction)")) {
   content = content.replace(
     'client.on("interactionCreate", async (interaction) => {\n  if (!interaction.isButton()) return;',
@@ -188,11 +185,7 @@ if (!content.includes("processOpsMaintenance({")) {
     console.error("Ops maintenance (nudges) failed.", error);
   }
 }`;
-  if (content.includes(maintNeedle)) {
-    content = content.replace(maintNeedle, maintReplace);
-  } else {
-    console.warn("WARN: processMaintenance end not found for ops injection");
-  }
+  if (content.includes(maintNeedle)) content = content.replace(maintNeedle, maintReplace);
 }
 
 if (!content.includes("handleListBoardModal,")) {
@@ -231,11 +224,54 @@ if (!content.includes("postRequestUpdate:")) {
   );
 }
 
+if (!content.includes("ChannelType.PrivateThread")) {
+  const threadOld = [
+    "thread = await sentRequest.startThread({",
+    "        name: `${formatRequestId(request.id)} — ${authorName}`.slice(0, 100),",
+    "        autoArchiveDuration: 10_080,",
+    "        reason: `Staff discussion for ${formatRequestId(request.id)}`,",
+    "      });",
+    "      updated = await updateRequest(request.id, { threadId: thread.id });",
+    "      await thread.send({",
+    "        content:",
+    "          `Staff discussion for ${formatRequestId(request.id)}.\\n` +",
+    "          `Requester: <@${authorId}> (\\`${authorId}\\`)\\nStatus: awaiting member setup details.`,",
+    "        allowedMentions: noMentions,",
+    "      });",
+  ].join("\n");
+  const threadNew = [
+    "thread = await sentRequest.startThread({",
+    "        name: `${formatRequestId(request.id)} — ${authorName}`.slice(0, 100),",
+    "        autoArchiveDuration: 10_080,",
+    "        type: ChannelType.PrivateThread,",
+    "        invitable: false,",
+    "        reason: `Staff discussion for ${formatRequestId(request.id)}`,",
+    "      });",
+    "      updated = await updateRequest(request.id, { threadId: thread.id });",
+    "      try {",
+    "        await thread.members.add(authorId);",
+    "      } catch (error) {",
+    "        console.error(",
+    "          `Could not add requester ${authorId} to private thread for ${formatRequestId(request.id)}.`,",
+    "          error,",
+    "        );",
+    "      }",
+    "      await thread.send({",
+    "        content:",
+    "          `Discussion privée pour ${formatRequestId(request.id)}.\\n` +",
+    "          `Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n` +",
+    "          `Status: awaiting member setup details.`,",
+    "        allowedMentions: { users: [author contId] },",
+    "      });",
+  ].join("\n");
+  if (content.includes(threadOld)) {
+    content = content.replace(threadOld, threadNew);
+  } else {
+    console.warn("WARN: startThread block not found for private-thread injection");
+  }
+}
+
 writeFileSync(outFile, content);
 console.log(
   `Assembled ${outFile} (${content.length} bytes) from ${files.length} compressed parts (moderation stripped, ops injected).`,
 );
-console.log("Has ops-commands import:", content.includes("ops-commands.js"));
-console.log("Has !find handler:", content.includes('command === "!find"'));
-console.log("Has !healthcheck help:", content.includes("!healthcheck"));
-console.log("Has recordGroqCall:", content.includes("recordGroqCall"));
