@@ -1,27 +1,14 @@
-import { EmbedBuilder, PermissionFlagsBits, type Message, type TextChannel } from "discord.js";
-const noMentions = { parse: [] as const };
-const commands = ["!ban", "!unban", "!kick", "!mute", "!unmute", "!timeout", "!untimeout", "!clear", "!purge", "!lock", "!unlock", "!slowmode"] as const;
-function embed(title: string, description: string, color = 0x5865f2) { return new EmbedBuilder().setColor(color).setTitle(title).setDescription(description).setTimestamp(); }
-function duration(value: string): number | null { const m = /^(\d{1,3})(s|m|h|d)$/i.exec(value); if (!m) return null; const n = Number(m[1]), u = m[2].toLowerCase(); const ms = n * (u === "s" ? 1000 : u === "m" ? 60000 : u === "h" ? 3600000 : 86400000); return n > 0 && ms <= 28 * 86400000 ? ms : null; }
-export function isUtilityCommand(command: string): boolean { return (commands as readonly string[]).includes(command); }
-export async function handleUtilityCommand(message: Message, args: string[], command: string): Promise<void> {
-  const guild = message.guild, member = message.member, bot = guild?.members.me; if (!guild || !member || !bot) return;
-  const permissions: Record<string, bigint> = { "!ban": PermissionFlagsBits.BanMembers, "!unban": PermissionFlagsBits.BanMembers, "!kick": PermissionFlagsBits.KickMembers, "!mute": PermissionFlagsBits.ModerateMembers, "!unmute": PermissionFlagsBits.ModerateMembers, "!timeout": PermissionFlagsBits.ModerateMembers, "!untimeout": PermissionFlagsBits.ModerateMembers, "!clear": PermissionFlagsBits.ManageMessages, "!purge": PermissionFlagsBits.ManageMessages, "!lock": PermissionFlagsBits.ManageChannels, "!unlock": PermissionFlagsBits.ManageChannels, "!slowmode": PermissionFlagsBits.ManageChannels };
-  const permission = permissions[command]; if (!permission || !member.permissions.has(permission) || !bot.permissions.has(permission)) { await message.reply({ embeds: [embed("Permission denied", "You or the bot lack the Discord permission required for this action.", 0xed4245)], allowedMentions: noMentions }); return; }
-  const raw = args[1] || "", id = raw.replace(/[<@!>]/g, ""); const target = id ? await guild.members.fetch(id).catch(() => null) : null;
-  if (["!kick", "!mute", "!unmute", "!timeout", "!untimeout"].includes(command) && !target) { await message.reply({ embeds: [embed("Invalid target", "Mention a member or provide a valid user ID.", 0xed4245)], allowedMentions: noMentions }); return; }
-  if (target && (target.id === message.author.id || target.id === guild.ownerId)) { await message.reply({ embeds: [embed("Action blocked", "You cannot moderate yourself or the server owner.", 0xed4245)], allowedMentions: noMentions }); return; }
-  if (target && member.id !== guild.ownerId && member.roles.highest.comparePositionTo(target.roles.highest) <= 0) { await message.reply({ embeds: [embed("Role hierarchy", "Your highest role must be above the target member’s highest role.", 0xed4245)], allowedMentions: noMentions }); return; }
-  if (target && bot.roles.highest.comparePositionTo(target.roles.highest) <= 0) { await message.reply({ embeds: [embed("Role hierarchy", "My highest role must be above the target member’s highest role.", 0xed4245)], allowedMentions: noMentions }); return; }
-  const reason = args.slice(command === "!mute" || command === "!timeout" ? 3 : 2).join(" ").trim() || "No reason provided";
-  try {
-    if (command === "!ban") { if (!/^\d{17,20}$/.test(id)) throw new Error("Usage: !ban @member [reason]"); await guild.members.ban(id, { reason }); await message.reply({ embeds: [embed("Member banned", "User: <@" + id + ">\nReason: " + reason)], allowedMentions: noMentions }); }
-    else if (command === "!unban") { if (!/^\d{17,20}$/.test(id)) throw new Error("Usage: !unban <user ID> [reason]"); await guild.members.unban(id, reason); await message.reply({ embeds: [embed("Ban removed", "Ban removed for user ID " + id + ".")], allowedMentions: noMentions }); }
-    else if (command === "!kick") { await target!.kick(reason); await message.reply({ embeds: [embed("Member kicked", "<@" + target!.id + "> was kicked.\nReason: " + reason)], allowedMentions: noMentions }); }
-    else if (command === "!mute" || command === "!timeout") { const ms = duration(args[2] || ""); if (!ms) throw new Error("Usage: " + command + " @member <duration> [reason]. Examples: 10m, 2h, 1d; maximum 28d."); await target!.timeout(ms, reason); await message.reply({ embeds: [embed("Member timed out", "<@" + target!.id + "> was timed out for " + Math.floor(ms / 1000) + " seconds.\nReason: " + reason)], allowedMentions: noMentions }); }
-    else if (command === "!unmute" || command === "!untimeout") { await target!.timeout(null, reason); await message.reply({ embeds: [embed("Timeout removed", "Timeout removed for <@" + target!.id + ">.")], allowedMentions: noMentions }); }
-    else if (command === "!clear" || command === "!purge") { const amount = Number(args[1]); if (!Number.isInteger(amount) || amount < 1 || amount > 100) throw new Error("Usage: !clear <1-100>"); if (!message.channel.isTextBased() || !("bulkDelete" in message.channel)) throw new Error("Use this in a server text channel."); const deleted = await (message.channel as TextChannel).bulkDelete(amount, true); const reply = await message.channel.send({ embeds: [embed("Messages cleared", "Deleted " + deleted.size + " recent messages.", 0x57f287)] }); setTimeout(() => reply.delete().catch(() => undefined), 5000); }
-    else if (command === "!lock" || command === "!unlock") { if (!message.channel.isTextBased() || !("permissionOverwrites" in message.channel)) throw new Error("Use this in a server text channel."); await (message.channel as TextChannel).permissionOverwrites.edit(guild.roles.everyone, { SendMessages: command === "!unlock" ? null : false }, { reason }); await message.reply({ embeds: [embed(command === "!lock" ? "Channel locked" : "Channel unlocked", "This channel is now " + (command === "!lock" ? "locked." : "unlocked."))], allowedMentions: noMentions }); }
-    else if (command === "!slowmode") { const seconds = Number(args[1]); if (!Number.isInteger(seconds) || seconds < 0 || seconds > 21600) throw new Error("Usage: !slowmode <0-21600> seconds"); if (!message.channel.isTextBased() || !("setRateLimitPerUser" in message.channel)) throw new Error("Use this in a server text channel."); await (message.channel as TextChannel).setRateLimitPerUser(seconds, reason); await message.reply({ embeds: [embed("Slowmode updated", "Slowmode is now " + seconds + " seconds.")], allowedMentions: noMentions }); }
-  } catch (error) { await message.reply({ embeds: [embed("Action failed", error instanceof Error ? error.message.slice(0, 1500) : "Action failed.", 0xed4245)], allowedMentions: noMentions }).catch(() => undefined); }
+import type { Message } from "discord.js";
+
+/** Moderation utility commands have been removed. */
+export function isUtilityCommand(_command: string): boolean {
+  return false;
+}
+
+export async function handleUtilityCommand(
+  _message: Message,
+  _args: string[],
+  _command: string,
+): Promise<void> {
+  // no-op: moderation commands disabled
 }
