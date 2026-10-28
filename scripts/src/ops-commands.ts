@@ -376,6 +376,152 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
   }
 }
 
+/** Staff: add a member to a request private thread.
+ * Usage:
+ *   !addthread REQ-42 @user
+ *   !addthread 42 @user
+ *   !addthread @user          (when used inside the request thread)
+ */
+export async function handleAddThreadCommand(
+  message: Message,
+  args: string[],
+  options: { guildId: string; client: Client; isStaff: boolean },
+): Promise<void> {
+  if (!options.isStaff) {
+    await message.reply({
+      content: "Seul le staff peut ajouter un membre à un thread de requête.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const tokens = args.slice(1);
+  if (tokens.length === 0) {
+    await message.reply({
+      content:
+        "Usage : `!addthread REQ-00042 @user`\n" +
+        "Ou dans le thread de la requête : `!addthread @user`",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  let targetUserId: string | null = null;
+  const otherTokens: string[] = [];
+  for (const t of tokens) {
+    const mention = t.match(/^<@!?(\d+)>$/);
+    if (mention) {
+      targetUserId = mention[1]!;
+    } else if (/^\d{5,22}$/.test(t)) {
+      if (t.length >= 15) {
+        targetUserId = t;
+      } else {
+        otherTokens.push(t);
+      }
+    } else {
+      otherTokens.push(t);
+    }
+  }
+
+  if (!targetUserId) {
+    await message.reply({
+      content: "Indique le membre à ajouter : `!addthread REQ-42 @user`",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  let threadId: string | null = null;
+  let requestLabel = "";
+  let requestId: number | null = null;
+
+  for (const t of otherTokens) {
+    const id = parseRequestId(t);
+    if (id) {
+      requestId = id;
+      break;
+    }
+  }
+
+  if (requestId) {
+    const request = await findRequestById(options.guildId, requestId);
+    if (!request) {
+      await message.reply({
+        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    if (!request.threadId) {
+      await message.reply({
+        content: `**${formatRequestId(requestId)}** n'a pas encore de thread.`,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    threadId = request.threadId;
+    requestLabel = formatRequestId(request.id);
+  } else if (message.channel.isThread()) {
+    threadId = message.channel.id;
+    requestLabel = `thread \`${threadId}\``;
+  } else {
+    await message.reply({
+      content:
+        "Précise la requête : `!addthread REQ-42 @user`\n" +
+        "Ou lance la commande **dans** le thread de la requête : `!addthread @user`",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  try {
+    const channel = await options.client.channels.fetch(threadId);
+    if (!channel || !channel.isThread()) {
+      await message.reply({
+        content: `Impossible de trouver le thread pour ${requestLabel}.`,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+
+    if (channel.archived) {
+      await channel.setArchived(false).catch(() => undefined);
+    }
+
+    await channel.members.add(targetUserId);
+
+    if (requestId) {
+      await recordRequestEvent({
+        requestId,
+        eventType: "thread_member_added",
+        actorId: message.author.id,
+        details: `user=${targetUserId};thread=${threadId}`,
+      }).catch(() => undefined);
+    }
+
+    await message.reply({
+      content: `✅ <@${targetUserId}> ajouté au thread de **${requestLabel}**.`,
+      allowedMentions: { users: [targetUserId] },
+    });
+
+    await channel
+      .send({
+        content: `➕ <@${targetUserId}> a été ajouté au thread par <@${message.author.id}>.`,
+        allowedMentions: { users: [targetUserId] },
+      })
+      .catch(() => undefined);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    await message.reply({
+      content:
+        `❌ Impossible d'ajouter le membre au thread.\n` +
+        `Vérifie que le bot a **Manage Threads** / accès au thread.\n` +
+        `\`${msg.slice(0, 200)}\``,
+      allowedMentions: noMentions,
+    });
+  }
+}
+
 export async function askMemberForInfo(input: {
   guildId: string;
   requestId: number;
