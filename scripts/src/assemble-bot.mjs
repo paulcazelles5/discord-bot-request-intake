@@ -18,7 +18,7 @@ const b64 = files
 const compressed = Buffer.from(b64, "base64");
 let content = inflateSync(compressed).toString("utf8");
 
-// Remove moderation utility commands (import, routing, help section)
+// Strip moderation utilities
 content = content.replace(
   /import\s*\{\s*handleUtilityCommand\s*,\s*isUtilityCommand\s*\}\s*from\s*["']\.\/utility-commands\.js["']\s*;\s*/g,
   "",
@@ -36,7 +36,7 @@ content = content.replace(
   "\n    ",
 );
 
-// --- Inject ops-commands ---
+// Ops import
 const OPS_IMPORT = `import {
   handleFindCommand,
   handleHealthcheckCommand,
@@ -46,7 +46,6 @@ const OPS_IMPORT = `import {
   recordGroqCall,
 } from "./ops-commands.js";
 `;
-
 if (!content.includes('from "./ops-commands.js"')) {
   content = content.replace(
     /(from\s*["']\.\/list-board\.js["']\s*;\s*)/,
@@ -54,6 +53,7 @@ if (!content.includes('from "./ops-commands.js"')) {
   );
 }
 
+// Ops command handlers after !help
 const OPS_HANDLERS = `
   if (command === "!find") {
     await handleFindCommand(message, args, {
@@ -81,7 +81,6 @@ const OPS_HANDLERS = `
     return;
   }
 `;
-
 if (!content.includes('command === "!find"')) {
   content = content.replace(
     /(if\s*\(\s*command\s*===\s*["']!help["']\s*\)\s*\{[\s\S]*?return;\s*\}\s*)/,
@@ -89,21 +88,19 @@ if (!content.includes('command === "!find"')) {
   );
 }
 
-const OPS_HELP = `"**Ops / discovery**\\n" +
-    "\`!find REQ-ID | @user | keyword\` — look up requests (own only for members, all for staff)\\n" +
-    "\`!myrequests\` — list your own requests\\n" +
-    "\`!stats\` — request counts by status + Groq session stats\\n" +
-    "\`!healthcheck\` — uptime, memory, DB, Discord, Groq diagnostics\\n\\n" +
-    `;
-
+// Help section
+const OPS_HELP =
+  '"**Ops / discovery**\\n" +\n' +
+  '    "`!find REQ-ID | @user | keyword` — look up requests (own only for members, all for staff)\\n" +\n' +
+  '    "`!myrequests` — list your own requests\\n" +\n' +
+  '    "`!stats` — request counts by status + Groq session stats\\n" +\n' +
+  '    "`!healthcheck` — uptime, memory, DB, Discord, Groq diagnostics\\n\\n" +\n' +
+  "    ";
 if (!content.includes("Ops / discovery")) {
-  content = content.replace(
-    /("\*\*Owner only\*\*\\n" \+)/,
-    `${OPS_HELP}$1`,
-  );
+  content = content.replace(/("\*\*Owner only\*\*\\n" \+)/, `${OPS_HELP}$1`);
 }
 
-// Modal + ops maintenance wiring
+// Modal handler wiring
 if (!content.includes("handleListBoardModal(interaction)")) {
   content = content.replace(
     'client.on("interactionCreate", async (interaction) => {\n  if (!interaction.isButton()) return;',
@@ -116,9 +113,28 @@ if (!content.includes("handleListBoardModal(interaction)")) {
   );
 }
 
+// List-board modal imports
+if (
+  (content.includes("isListBoardModal(") || content.includes("handleListBoardModal(")) &&
+  (!/handleListBoardModal\s*,/.test(content) || !/isListBoardModal\s*,/.test(content))
+) {
+  content = content.replace(
+    /import\s*\{\s*handleListBoardButton,\s*isListBoardButton,\s*notifyListBoardChanged,\s*startListBoard,\s*\}\s*from\s*["']\.\/list-board\.js["']\s*;/,
+    `import {
+  handleListBoardButton,
+  handleListBoardModal,
+  isListBoardButton,
+  isListBoardModal,
+  notifyListBoardChanged,
+  startListBoard,
+} from "./list-board.js";`,
+  );
+}
+
+// Ops maintenance hourly on ready
 if (!content.includes("processOpsMaintenance({")) {
   content = content.replace(
-    /client\.once\(["']ready["'],\s*async\s*\(\)\s*=>\s*\{/, 
+    /client\.once\(\s*["']ready["']\s*,\s*async\s*\(\)\s*=>\s*\{/,
     `client.once("ready", async () => {
   setInterval(() => {
     void processOpsMaintenance({
@@ -148,45 +164,28 @@ if (!content.includes("processOpsMaintenance({")) {
   );
 }
 
-if ((content.includes("isListBoardModal(") || content.includes("handleListBoardModal(")) &&
-    (!/handleListBoardModal\s*,/.test(content) || !/isListBoardModal\s*,/.test(content))) {
-  content = content.replace(
-    /import\s*\{\s*handleListBoardButton,\s*isListBoardButton,\s*notifyListBoardChanged,\s*startListBoard,\s*\}\s*from\s*["']\.\/list-board\.js["']\s*;/,
-    `import {
-  handleListBoardButton,
-  handleListBoardModal,
-  isListBoardButton,
-  isListBoardModal,
-  notifyListBoardChanged,
-  startListBoard,
-} from "./list-board.js";`,
-  );
-}
-
-// Private thread + invite the requester (parent channel is staff-only)
+// Private threads: inject type + invitable, members.add, French message
 if (!content.includes("ChannelType.PrivateThread")) {
-  if (content.includes("autoArchiveDuration: 10_080,")) {
-    content = content.replace(
-      "autoArchiveDuration: 10_080,\n        reason:",
-      "autoArchiveDuration: 10_080,\n        type: ChannelType.PrivateThread,\n        invitable: false,\n        reason:",
-    );
-  }
-  const addMemberNeedle = "updated = await updateRequest(request.id, { threadId: thread.id });";
-  const addMemberInsert = `updated = await updateRequest(request.id, { threadId: thread.id });
+  content = content.replace(
+    "autoArchiveDuration: 10_080,\n        reason:",
+    "autoArchiveDuration: 10_080,\n        type: ChannelType.PrivateThread,\n        invitable: false,\n        reason:",
+  );
+  content = content.replace(
+    "updated = await updateRequest(request.id, { threadId: thread.id });\n      await thread.send({",
+    `updated = await updateRequest(request.id, { threadId: thread.id });
       try {
         await thread.members.add(authorId);
       } catch (error) {
         console.error(
-          \`Could not add requester \${authorId} to private thread for \${formatRequestId(request.id)}.\`,
+          "Could not add requester " + authorId + " to private thread for " + formatRequestId(request.id) + ".",
           error,
         );
-      }`;
-  if (content.includes(addMemberNeedle) && !content.includes("thread.members.add(authorId)")) {
-    content = content.replace(addMemberNeedle, addMemberInsert);
-  }
+      }
+      await thread.send({`,
+  );
   content = content.replace(
-    "`Staff discussion for ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`)\\nStatus: awaiting member setup details.`,\n        allowedMentions: noMentions,",
-    "`Discussion privée pour ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n` +\n          `Status: awaiting member setup details.`,\n        allowedMentions: { users: [authorId] },",
+    "Staff discussion for ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`)\\nStatus: awaiting member setup details.`,\n        allowedMentions: noMentions,",
+    "Discussion privée pour ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n` +\n          `Status: awaiting member setup details.`,\n        allowedMentions: { users: [authorId] },",
   );
 }
 
@@ -197,4 +196,5 @@ console.log(
 console.log("Has ops-commands import:", content.includes("ops-commands.js"));
 console.log("Has !find handler:", content.includes('command === "!find"'));
 console.log("Has !healthcheck help:", content.includes("!healthcheck"));
-console.log("Has recordGroqCall:", content.includes("recordGroqCall"));
+console.log("Has PrivateThread:", content.includes("ChannelType.PrivateThread"));
+console.log("Has members.add:", content.includes("thread.members.add"));
