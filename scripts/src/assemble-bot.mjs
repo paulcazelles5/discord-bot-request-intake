@@ -38,6 +38,7 @@ content = content.replace(
 
 // Ops import
 const OPS_IMPORT = `import {
+  handleAddThreadCommand,
   handleFindCommand,
   handleHealthcheckCommand,
   handleMyRequestsCommand,
@@ -80,6 +81,14 @@ const OPS_HANDLERS = `
     });
     return;
   }
+  if (command === "!addthread") {
+    await handleAddThreadCommand(message, args, {
+      guildId: HOME_GUILD_ID,
+      client,
+      isStaff: await isAuthorized(message, "!history"),
+    });
+    return;
+  }
 `;
 if (!content.includes('command === "!find"')) {
   content = content.replace(
@@ -94,7 +103,8 @@ const OPS_HELP =
   '    "`!find REQ-ID | @user | keyword` — look up requests (own only for members, all for staff)\\n" +\n' +
   '    "`!myrequests` — list your own requests\\n" +\n' +
   '    "`!stats` — request counts by status + Groq session stats\\n" +\n' +
-  '    "`!healthcheck` — uptime, memory, DB, Discord, Groq diagnostics\\n\\n" +\n' +
+  '    "`!healthcheck` — uptime, memory, DB, Discord, Groq diagnostics\\n" +\n' +
+  '    "`!addthread REQ-ID @user` — add a member to a request thread (staff)\\n\\n" +\n' +
   "    ";
 if (!content.includes("Ops / discovery")) {
   content = content.replace(/("\*\*Owner only\*\*\\n" \+)/, `${OPS_HELP}$1`);
@@ -189,6 +199,29 @@ if (!content.includes("ChannelType.PrivateThread")) {
   );
 }
 
+// Ensure !addthread handler even if ops handlers were already injected
+if (!content.includes('command === "!addthread"')) {
+  content = content.replace(
+    /(if\s*\(\s*command\s*===\s*["']!healthcheck["']\s*\)\s*\{[\s\S]*?return;\s*\}\s*)/,
+    `$1
+  if (command === "!addthread") {
+    await handleAddThreadCommand(message, args, {
+      guildId: HOME_GUILD_ID,
+      client,
+      isStaff: await isAuthorized(message, "!history"),
+    });
+    return;
+  }
+`,
+  );
+  if (!content.includes("handleAddThreadCommand")) {
+    content = content.replace(
+      "handleFindCommand,",
+      "handleAddThreadCommand,\n  handleFindCommand,",
+    );
+  }
+}
+
 writeFileSync(outFile, content);
 console.log(
   `Assembled ${outFile} (${content.length} bytes) from ${files.length} compressed parts (moderation stripped, ops injected).`,
@@ -198,3 +231,4 @@ console.log("Has !find handler:", content.includes('command === "!find"'));
 console.log("Has !healthcheck help:", content.includes("!healthcheck"));
 console.log("Has PrivateThread:", content.includes("ChannelType.PrivateThread"));
 console.log("Has members.add:", content.includes("thread.members.add"));
+console.log("Has !addthread:", content.includes('command === "!addthread"'));
