@@ -1,22 +1,43 @@
 #!/usr/bin/env node
 /**
- * Restored assemble entry: loads split source parts then runs the real assembler.
- * (Recovered after a bad PLACEHOLDER push.)
+ * Bootstrap: restore the real assembler from a known-good commit, then run it.
+ * Avoids the broken PLACEHOLDER that was briefly on main.
  */
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { writeFileSync, readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const partA = join(__dirname, "assemble-part-a.mjs.txt");
-const partB = join(__dirname, "assemble-part-b.mjs.txt");
+const GOOD_COMMIT = "23434304479f46fcc61298d9ec075069165f712f";
+const RAW_URL = `https://raw.githubusercontent.com/paulcazelles5/discord-bot-request-intake/${GOOD_COMMIT}/scripts/src/assemble-bot.mjs`;
+const cachePath = join(__dirname, "_assemble_cached.mjs");
 
-if (!existsSync(partA) || !existsSync(partB)) {
-  console.error("Missing assemble-part-a/b.mjs.txt — cannot assemble the bot.");
-  process.exit(1);
+async function main() {
+  let code;
+  if (existsSync(cachePath)) {
+    const cached = readFileSync(cachePath, "utf8");
+    if (cached.includes("inflateSync") && !cached.includes("PLACEHOLDER")) {
+      code = cached;
+    }
+  }
+  if (!code) {
+    console.log("Downloading known-good assemble-bot from", GOOD_COMMIT);
+    const res = await fetch(RAW_URL);
+    if (!res.ok) {
+      throw new Error(`Failed to download assembler: HTTP ${res.status}`);
+    }
+    code = await res.text();
+    if (!code.includes("inflateSync") || code.includes("PLACEHOLDER")) {
+      throw new Error("Downloaded assembler looks invalid");
+    }
+    writeFileSync(cachePath, code);
+  }
+  const runPath = join(__dirname, "_assemble_runtime.mjs");
+  writeFileSync(runPath, code);
+  await import(pathToFileURL(runPath).href);
 }
 
-const code = readFileSync(partA, "utf8") + readFileSync(partB, "utf8");
-const tmp = join(__dirname, "_assemble_runtime.mjs");
-writeFileSync(tmp, code);
-await import(pathToFileURL(tmp).href);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
