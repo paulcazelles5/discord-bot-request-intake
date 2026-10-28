@@ -7,15 +7,16 @@
     "hello": "tsx ./src/hello.ts",
     "assemble-bot": "node ./src/assemble-bot.mjs",
     "discord-bot": "node ./src/assemble-bot.mjs && node ./src/patch-boot.mjs && tsx ./src/discord-bot.ts",
+    "start": "node ./src/assemble-bot.mjs && node ./src/patch-boot.mjs && tsx ./src/discord-bot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "@types/node": "catalog:",
-    "tsx": "catalog:"
+    "@types/node": "catalog:"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
     "discord.js": "^14.27.0",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "tsx": "catalog:"
   }
 }

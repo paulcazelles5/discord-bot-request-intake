@@ -1,0 +1,15 @@
+# Railway config for the Discord request bot (worker — no HTTP server)
+[build]
+builder = "nixpacks"
+buildCommand = "pnpm install --frozen-lockfile"
+
+[deploy]
+startCommand = "pnpm start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+# Discord bots are long-running workers; they do not bind an HTTP port.
+# In Railway UI: Settings → Networking → disable public networking if enabled,
+# and use a Worker service (or ignore healthcheck / set healthcheckPath empty).
+
+[nixpacks]
+# Ensure pnpm is used (packageManager field also helps)
