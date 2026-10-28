@@ -3,7 +3,7 @@
  * Crash-safe assembler:
  * 1) Load known-good assemble-bot from commit 2343430 (or cache)
  * 2) Disable broken Groq instrumentation entirely (was leaving a bare try{})
- * 3) Inject modal imports + login-before-DB before writeFileSync
+ * 3) Inject modal imports + login-before-DB + English-only strings before writeFileSync
  * 4) Run
  */
 import { writeFileSync, readFileSync, existsSync } from "fs";
@@ -69,6 +69,18 @@ try {
     content = content.replace(/await verifyStoreReady\\(\\);\\s*\\n\\s*await client\\.login\\(BOT_TOKEN\\);/, newBoot);
     console.log("Patched boot (regex).");
   }
+}
+
+// English-only private thread welcome (was French)
+{
+  content = content.replaceAll(
+    "Discussion privée pour",
+    "Private discussion for",
+  );
+  content = content.replaceAll(
+    "tu as accès à ce thread uniquement",
+    "you only have access to this thread",
+  );
 }
 
 // Final safety: if any incomplete try remains in generateBotCodeWithGroq, strip it
