@@ -27,12 +27,10 @@ content = content.replace(
   /\s*if\s*\(\s*isUtilityCommand\(command\s*\?\?\s*["']["']\s*\)\s*\)\s*\{\s*await\s+handleUtilityCommand\(message\s*,\s*args\s*,\s*command\s*\?\?\s*["']["']\s*\)\s*;\s*return\s*;\s*\}\s*/g,
   "\n",
 );
-// Remove the whole Utilities help block cleanly
 content = content.replace(
   /\s*"\*\*Utilities\*\* \(requires the corresponding Discord moderation permission\)\\n" \+\n\s*"`!ban[^"]*" \+\n\s*"`!mute[^"]*" \+\n\s*"`!clear[^"]*" \+\n/,
   "\n    ",
 );
-// Also drop any leftover ban/mute lines if the above didn't match exactly
 content = content.replace(
   /\s*"`!ban[^`]*`\s*,\s*`!unban[^`]*`\s*,\s*`!kick[^`]*`\\n" \+\n\s*"`!mute[^"]*" \+\n\s*"`!clear[^"]*" \+\n/g,
   "\n    ",
@@ -49,7 +47,7 @@ const OPS_IMPORT = `import {
 } from "./ops-commands.js";
 `;
 
-if (!content.includes("from \"./ops-commands.js\"")) {
+if (!content.includes('from "./ops-commands.js"')) {
   content = content.replace(
     /(from\s*["']\.\/list-board\.js["']\s*;\s*)/,
     `$1\n${OPS_IMPORT}`,
@@ -105,10 +103,7 @@ if (!content.includes("Ops / discovery")) {
   );
 }
 
-// Groq instrumentation disabled (previous version could leave a bare try{})
-// recordGroqCall is still imported; callers can wire it later safely.
-
-// --- Final wiring: modal + ops maintenance ---
+// Modal + ops maintenance wiring
 if (!content.includes("handleListBoardModal(interaction)")) {
   content = content.replace(
     'client.on("interactionCreate", async (interaction) => {\n  if (!interaction.isButton()) return;',
@@ -122,7 +117,6 @@ if (!content.includes("handleListBoardModal(interaction)")) {
 }
 
 if (!content.includes("processOpsMaintenance({")) {
-  // Wire maintenance near ready handler if present
   content = content.replace(
     /client\.once\(["']ready["'],\s*async\s*\(\)\s*=>\s*\{/, 
     `client.once("ready", async () => {
@@ -154,7 +148,6 @@ if (!content.includes("processOpsMaintenance({")) {
   );
 }
 
-// Ensure modal imports from list-board
 if ((content.includes("isListBoardModal(") || content.includes("handleListBoardModal(")) &&
     (!/handleListBoardModal\s*,/.test(content) || !/isListBoardModal\s*,/.test(content))) {
   content = content.replace(
@@ -172,50 +165,29 @@ if ((content.includes("isListBoardModal(") || content.includes("handleListBoardM
 
 // Private thread + invite the requester (parent channel is staff-only)
 if (!content.includes("ChannelType.PrivateThread")) {
-  const threadOld = [
-    "thread = await sentRequest.startThread({",
-    "        name: \`${formatRequestId(request.id)} — ${authorName}\`.slice(0, 100),",
-    "        autoArchiveDuration: 10_080,",
-    "        reason: \`Staff discussion for ${formatRequestId(request.id)}\`",
-    "      });",
-    "      updated = await updateRequest(request.id, { threadId: thread.id });",
-    "      await thread.send({",
-    "        content:",
-    "          \`Staff discussion for ${formatRequestId(request.id)}.\\n\` +",
-    "          \`Requester: <@${authorId}> (\\`${authorId}\\`)\\nStatus: awaiting member setup details.\`",
-    "        allowedMentions: noMentions,",
-    "      });",
-  ].join("\n");
-  const threadNew = [
-    "thread = await sentRequest.startThread({",
-    "        name: \`${formatRequestId(request.id)} — ${authorName}\`.slice(0, 100),",
-    "        autoArchiveDuration: 10_080,",
-    "        type: ChannelType.PrivateThread,",
-    "        invitable: false,",
-    "        reason: \`Staff discussion for ${formatRequestId(request.id)}\`",
-    "      });",
-    "      updated = await updateRequest(request.id, { threadId: thread.id });",
-    "      try {",
-    "        await thread.members.add(authorId);",
-    "      } catch (error) {",
-    "        console.error(",
-    "          \`Could not add requester ${authorId} to private thread for ${formatRequestId(request.id)}.\`,",
-    "          error,",
-    "        );",
-    "      }",
-    "      await thread.send({",
-    "        content:",
-    "          \`Discussion privée pour ${formatRequestId(request.id)}.\\n\` +",
-    "          \`Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n\` +",
-    "          \`Status: awaiting member setup details.\`",
-    "        allowedMentions: { users: [authorId] },",
-    "      });",
-  ].join("\n");
-  if (content.includes(threadOld)) {
-    content = content.replace(threadOld, threadNew);
-  } else {
-    console.warn("WARN: startThread block not found for private-thread injection");
+  if (content.includes("autoArchiveDuration: 10_080,")) {
+    content = content.replace(
+      "autoArchiveDuration: 10_080,\n        reason:",
+      "autoArchiveDuration: 10_080,\n        type: ChannelType.PrivateThread,\n        invitable: false,\n        reason:",
+    );
   }
+  const addMemberNeedle = "updated = await updateRequest(request.id, { threadId: thread.id });";
+  const addMemberInsert = `updated = await updateRequest(request.id, { threadId: thread.id });
+      try {
+        await thread.members.add(authorId);
+      } catch (error) {
+        console.error(
+          \`Could not add requester \${authorId} to private thread for \${formatRequestId(request.id)}.\`,
+          error,
+        );
+      }`;
+  if (content.includes(addMemberNeedle) && !content.includes("thread.members.add(authorId)")) {
+    content = content.replace(addMemberNeedle, addMemberInsert);
+  }
+  content = content.replace(
+    "`Staff discussion for ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`)\\nStatus: awaiting member setup details.`,\n        allowedMentions: noMentions,",
+    "`Discussion privée pour ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n` +\n          `Status: awaiting member setup details.`,\n        allowedMentions: { users: [authorId] },",
+  );
 }
 
 writeFileSync(outFile, content);
