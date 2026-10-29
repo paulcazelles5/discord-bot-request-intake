@@ -1,3 +1,4 @@
+// Deployment refresh marker; removed immediately after triggering Railway.
 import {
   type Client,
   type Message,
