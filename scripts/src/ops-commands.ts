@@ -9,6 +9,7 @@ import {
   findRequestById,
   formatRequestId,
   listRequestEvents,
+  listRequestFollowups,
   listRequests,
   parseRequestId,
   recordRequestEvent,
@@ -197,30 +198,102 @@ export async function handleHealthcheckCommand(
   },
 ): Promise<void> {
   const mem = process.memoryUsage();
+  const wsPing = options.client.ws.ping;
+
   let dbOk = false;
   let dbError = "";
+  let dbMs = 0;
+  const dbStart = Date.now();
   try {
     await verifyStoreReady();
     dbOk = true;
+    dbMs = Date.now() - dbStart;
   } catch (e) {
     dbError = e instanceof Error ? e.message : String(e);
+    dbMs = Date.now() - dbStart;
   }
+
   const guild = await options.client.guilds.fetch(options.guildId).catch(() => null);
   const listChannel = guild?.channels.cache.find(
     (c) => c.isTextBased() && "name" in c && c.name === "・list",
   );
-  const lines = [
-    "**Healthcheck**",
-    `Uptime: ${formatUptime(Date.now() - STARTED_AT)}`,
-    `Memory RSS: ${Math.round(mem.rss / 1024 / 1024)} MB · heap ${Math.round(mem.heapUsed / 1024 / 1024)}/${Math.round(mem.heapTotal / 1024 / 1024)} MB`,
-    `Discord: ${options.client.user?.tag ?? "?"} · ping ${options.client.ws.ping}ms`,
-    `Guild: ${guild ? `✅ ${guild.name}` : "❌ missing"}`,
-    `Database: ${dbOk ? "✅ ready" : `❌ ${dbError.slice(0, 120)}`}`,
-    `Groq key: ${options.groqApiKey ? "✅ set" : "❌ missing"}` +
-      (options.groqModel ? ` · model \`${options.groqModel}\`` : ""),
-    `• List channel \`・list\`: ${listChannel ? `✅ <#${listChannel.id}>` : "❌ not found"}`,
+  const requestsChannel = guild?.channels.cache.find(
+    (c) => c.isTextBased() && "name" in c && (c.name === "・requests" || c.name.includes("request")),
+  );
+
+  let byStatus: Record<string, number> = {};
+  try {
+    byStatus = await countRequestsByStatus(options.guildId);
+  } catch {
+    byStatus = {};
+  }
+  const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
+  const openStatuses = [
+    "awaiting_member",
+    "waiting_on_member",
+    "received",
+    "needs_info",
+    "accepted",
+    "in_progress",
   ];
-  await message.reply({ content: lines.join("\n"), allowedMentions: noMentions });
+  const open = openStatuses.reduce((n, s) => n + (byStatus[s] ?? 0), 0);
+  const needsInfo = byStatus["needs_info"] ?? 0;
+  const awaiting = (byStatus["awaiting_member"] ?? 0) + (byStatus["waiting_on_member"] ?? 0);
+
+  let groqLine = "❌ no API key";
+  if (options.groqApiKey) {
+    const t0 = Date.now();
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/models", {
+        headers: { Authorization: `Bearer ${options.groqApiKey}` },
+      });
+      const ms = Date.now() - t0;
+      groqLine = res.ok
+        ? `✅ HTTP ${res.status} (${ms} ms) · model \`${options.groqModel ?? "?"}\``
+        : `⚠️ HTTP ${res.status} (${ms} ms)`;
+    } catch (e) {
+      const ms = Date.now() - t0;
+      groqLine = `❌ ${e instanceof Error ? e.message : String(e)} (${ms} ms)`;
+    }
+  }
+
+  const topStatuses = Object.entries(byStatus)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([s, n]) => `  · \`${s}\`: **${n}**`)
+    .join("\n");
+
+  const lines = [
+    "**🏥 Healthcheck**",
+    "",
+    "**Process**",
+    `• Uptime: **${formatUptime(Date.now() - STARTED_AT)}** (since <t:${Math.floor(STARTED_AT / 1000)}:R>)`,
+    `• Node: \`${process.version}\` · PID \`${process.pid}\``,
+    `• Memory RSS: **${Math.round(mem.rss / 1024 / 1024)} MB** · heap **${Math.round(mem.heapUsed / 1024 / 1024)}/${Math.round(mem.heapTotal / 1024 / 1024)} MB**`,
+    "",
+    "**Discord**",
+    `• Bot: ${options.client.user ? `**${options.client.user.tag}**` : "not ready"} · WS **${wsPing} ms**`,
+    `• Guild: ${guild ? `✅ **${guild.name}**` : "❌ missing"} (\`${options.guildId}\`)`,
+    `• Panel \`・list\`: ${listChannel ? `✅ <#${listChannel.id}>` : "❌ not found"}`,
+    `• Requests channel: ${requestsChannel ? `✅ <#${requestsChannel.id}>` : "⚠️ not found in cache"}`,
+    `• Owner: \`${options.ownerId || "unset"}\``,
+    "",
+    "**Database**",
+    `• ${dbOk ? `✅ ready (${dbMs} ms)` : `❌ ${dbError.slice(0, 120)} (${dbMs} ms)`}`,
+    `• Requests: **${total}** total · **${open}** open · **${needsInfo}** needs_info · **${awaiting}** awaiting member`,
+    topStatuses ? `• By status:\n${topStatuses}` : "• By status: _none_",
+    "",
+    "**Groq**",
+    `• ${groqLine}`,
+    `• Session: **${groqStats.calls}** calls (ok ${groqStats.successes} / fail ${groqStats.failures})` +
+      (groqStats.lastCallAt
+        ? ` · last <t:${Math.floor(groqStats.lastCallAt / 1000)}:R>`
+        : " · last never"),
+    "",
+    "_Maintenance auto: rappels membre J+1/5/9/10 + pings staff (toutes les heures)._",
+  ];
+
+  await message.reply({ content: lines.join("\n").slice(0, 1900), allowedMentions: noMentions });
 }
 
 export async function handleMyRequestsCommand(
@@ -234,17 +307,116 @@ export async function handleMyRequestsCommand(
     sort: "newest",
   });
   if (!rows.length) {
-    await message.reply({ content: "You have no requests yet.", allowedMentions: noMentions });
+    await message.reply({ content: "Tu n'as aucune requête pour le moment.", allowedMentions: noMentions });
     return;
   }
-  const lines = rows.map(
-    (r) =>
-      `• **${formatRequestId(r.id)}** · \`${r.status}\` · ${new Date(r.createdAt).toISOString().slice(0, 10)} · ${String(r.description ?? "").slice(0, 50)}`,
-  );
+
+  const lines: string[] = [];
+  for (const r of rows) {
+    const ageDays = Math.floor((Date.now() - new Date(r.createdAt).getTime()) / DAY_MS);
+    const pending = await findPendingFollowupForRequest(r.id).catch(() => null);
+    const threadPart = r.threadId
+      ? ` · [thread](https://discord.com/channels/${options.guildId}/${r.threadId})`
+      : "";
+    const pendingPart = pending
+      ? `\n  ⏳ Question en attente : ${String(pending.question).slice(0, 80)}`
+      : "";
+    const desc = String(r.description ?? "").replace(/\n/g, " ").slice(0, 50);
+    lines.push(
+      `• **${formatRequestId(r.id)}** · \`${r.status}\` · ${ageDays}j` +
+        `${threadPart}\n  ${desc || "_sans description_"}${pendingPart}`,
+    );
+  }
+
   await message.reply({
-    content: `**Your requests** (${rows.length})\n${lines.join("\n")}`.slice(0, 1900),
+    content: `**Tes requêtes** (${rows.length})\n${lines.join("\n")}`.slice(0, 1900),
     allowedMentions: noMentions,
   });
+}
+
+/** Member or staff: detailed status for one request.
+ * Usage: !status  |  !status REQ-42
+ */
+export async function handleStatusCommand(
+  message: Message,
+  args: string[],
+  options: { guildId: string; isStaff: boolean },
+): Promise<void> {
+  const query = args.slice(1).join(" ").trim();
+  let request =
+    query
+      ? await (async () => {
+          const id = parseRequestId(query);
+          if (!id) return null;
+          return findRequestById(options.guildId, id);
+        })()
+      : null;
+
+  if (!request && !query) {
+    const mine = await listRequests(options.guildId, {
+      memberId: message.author.id,
+      page: 1,
+      pageSize: 1,
+      sort: "newest",
+    });
+    request = mine[0] ?? null;
+  }
+
+  if (!request) {
+    await message.reply({
+      content: query
+        ? `Requête introuvable pour \`${query}\`.`
+        : "Tu n'as aucune requête. Usage : `!status` ou `!status REQ-42`.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  if (!options.isStaff && request.memberId !== message.author.id) {
+    await message.reply({
+      content: "Tu ne peux consulter que tes propres requêtes.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const pending = await findPendingFollowupForRequest(request.id).catch(() => null);
+  const followups = await listRequestFollowups(request.id).catch(() => []);
+  const ageDays = Math.floor((Date.now() - new Date(request.createdAt).getTime()) / DAY_MS);
+  const updatedDays = Math.floor((Date.now() - new Date(request.updatedAt).getTime()) / DAY_MS);
+
+  const threadLine = request.threadId
+    ? `Thread: https://discord.com/channels/${options.guildId}/${request.threadId}`
+    : "Thread: —";
+
+  const lines = [
+    `**${formatRequestId(request.id)}**`,
+    `Status: \`${request.status}\` · Stage: \`${request.stage}\``,
+    `Membre: <@${request.memberId}>`,
+    request.assignedToId ? `Assigné: <@${request.assignedToId}>` : "Assigné: —",
+    `Créée: <t:${Math.floor(new Date(request.createdAt).getTime() / 1000)}:f> (${ageDays}j)`,
+    `MAJ: <t:${Math.floor(new Date(request.updatedAt).getTime() / 1000)}:R> (${updatedDays}j)`,
+    threadLine,
+    `Description: ${String(request.description ?? "").slice(0, 300) || "—"}`,
+  ];
+
+  if (pending) {
+    const fAge = Math.floor((Date.now() - new Date(pending.createdAt).getTime()) / DAY_MS);
+    lines.push(
+      "",
+      `**Question en attente** (${fAge}j) :`,
+      `> ${String(pending.question).slice(0, 400)}`,
+      "_Réponds en DM au bot ou avec `!resume`._",
+    );
+  } else if (followups.length) {
+    const last = followups[followups.length - 1]!;
+    lines.push(
+      "",
+      `Dernier follow-up: \`${last.status}\` — ${String(last.question).slice(0, 120)}`,
+    );
+  }
+
+  await message.reply({ content: lines.join("\n").slice(0, 1900), allowedMentions: noMentions });
 }
 
 const MEMBER_NUDGE_SCHEDULE = [
@@ -267,7 +439,6 @@ async function hasEvent(requestId: number, eventType: string): Promise<boolean> 
   return events.some((e) => e.eventType === eventType);
 }
 
-/** Member follow-up schedule (J+1 / J+5 / J+9 / expire J+10) + staff thread nudges. */
 export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<void> {
   const openStatuses = new Set([
     "awaiting_member",
@@ -376,12 +547,6 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
   }
 }
 
-/** Staff: add a member to a request private thread.
- * Usage:
- *   !addthread REQ-42 @user
- *   !addthread 42 @user
- *   !addthread @user          (when used inside the request thread)
- */
 export async function handleAddThreadCommand(
   message: Message,
   args: string[],
@@ -516,6 +681,146 @@ export async function handleAddThreadCommand(
       content:
         `❌ Impossible d'ajouter le membre au thread.\n` +
         `Vérifie que le bot a **Manage Threads** / accès au thread.\n` +
+        `\`${msg.slice(0, 200)}\``,
+      allowedMentions: noMentions,
+    });
+  }
+}
+
+export async function handleRemoveThreadCommand(
+  message: Message,
+  args: string[],
+  options: { guildId: string; client: Client; isStaff: boolean },
+): Promise<void> {
+  if (!options.isStaff) {
+    await message.reply({
+      content: "Seul le staff peut retirer un membre d'un thread de requête.",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  const tokens = args.slice(1);
+  if (tokens.length === 0) {
+    await message.reply({
+      content:
+        "Usage : `!removethread REQ-00042 @user`\n" +
+        "Ou dans le thread de la requête : `!removethread @user`",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  let targetUserId: string | null = null;
+  const otherTokens: string[] = [];
+  for (const t of tokens) {
+    const mention = t.match(/^<@!?(\d+)>$/);
+    if (mention) {
+      targetUserId = mention[1]!;
+    } else if (/^\d{5,22}$/.test(t)) {
+      if (t.length >= 15) {
+        targetUserId = t;
+      } else {
+        otherTokens.push(t);
+      }
+    } else {
+      otherTokens.push(t);
+    }
+  }
+
+  if (!targetUserId) {
+    await message.reply({
+      content: "Indique le membre à retirer : `!removethread REQ-42 @user`",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  let threadId: string | null = null;
+  let requestLabel = "";
+  let requestId: number | null = null;
+
+  for (const t of otherTokens) {
+    const id = parseRequestId(t);
+    if (id) {
+      requestId = id;
+      break;
+    }
+  }
+
+  if (requestId) {
+    const request = await findRequestById(options.guildId, requestId);
+    if (!request) {
+      await message.reply({
+        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    if (!request.threadId) {
+      await message.reply({
+        content: `**${formatRequestId(requestId)}** n'a pas de thread.`,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    threadId = request.threadId;
+    requestLabel = formatRequestId(request.id);
+  } else if (message.channel.isThread()) {
+    threadId = message.channel.id;
+    requestLabel = `thread \`${threadId}\``;
+  } else {
+    await message.reply({
+      content:
+        "Précise la requête : `!removethread REQ-42 @user`\n" +
+        "Ou lance la commande **dans** le thread : `!removethread @user`",
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
+  try {
+    const channel = await options.client.channels.fetch(threadId);
+    if (!channel || !channel.isThread()) {
+      await message.reply({
+        content: `Impossible de trouver le thread pour ${requestLabel}.`,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+
+    if (channel.archived) {
+      await channel.setArchived(false).catch(() => undefined);
+    }
+
+    await channel.members.remove(targetUserId);
+
+    if (requestId) {
+      await recordRequestEvent({
+        requestId,
+        eventType: "thread_member_removed",
+        actorId: message.author.id,
+        details: `user=${targetUserId};thread=${threadId}`,
+      }).catch(() => undefined);
+    }
+
+    await message.reply({
+      content: `✅ <@${targetUserId}> retiré du thread de **${requestLabel}**.`,
+      allowedMentions: { users: [targetUserId] },
+    });
+
+    await channel
+      .send({
+        content: `➖ <@${targetUserId}> a été retiré du thread par <@${message.author.id}>.`,
+        allowedMentions: { users: [targetUserId] },
+      })
+      .catch(() => undefined);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    await message.reply({
+      content:
+        `❌ Impossible de retirer le membre du thread.\n` +
+        `Vérifie que le bot a **Manage Threads**.\n` +
         `\`${msg.slice(0, 200)}\``,
       allowedMentions: noMentions,
     });
