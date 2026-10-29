@@ -211,7 +211,7 @@ if (!content.includes("ChannelType.PrivateThread")) {
   );
   content = content.replace(
     "Staff discussion for ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`)\\nStatus: awaiting member setup details.`,\n        allowedMentions: noMentions,",
-    "Discussion privée pour ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`) — tu as accès à ce thread uniquement.\\n` +\n          `Status: awaiting member setup details.`,\n        allowedMentions: { users: [authorId] },",
+    "Private discussion for ${formatRequestId(request.id)}.\\n` +\n          `Requester: <@${authorId}> (\\`${authorId}\\`) — you are the only requester with access to this thread.\\n` +\n          `Status: awaiting member setup details.`,\n        allowedMentions: { users: [authorId] },",
   );
 }
 
