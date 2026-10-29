@@ -424,7 +424,7 @@ export async function isCommandAllowed(
     .where(
       and(
         eq(discordCommandPermissionsTable.guildId, guildId),
-        eq(discordCommandPermissionsTable.command, command),
+        eq(discordCommandPermissionsTable.commandName, command),
         or(
           eq(discordCommandPermissionsTable.userId, userId),
           eq(discordCommandPermissionsTable.userId, "*"),
@@ -481,7 +481,7 @@ export async function revokeCommandPermission(input: {
     .where(
       and(
         eq(discordCommandPermissionsTable.guildId, input.guildId),
-        eq(discordCommandPermissionsTable.command, input.command),
+        eq(discordCommandPermissionsTable.commandName, input.command),
         eq(discordCommandPermissionsTable.userId, input.userId),
       ),
     );
