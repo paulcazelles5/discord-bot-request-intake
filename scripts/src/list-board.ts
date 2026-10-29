@@ -138,11 +138,11 @@ function buildButtons(page: number, totalPages: number): ActionRowBuilder<Button
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`${LIST_BUTTON_PREFIX}mine`)
-      .setLabel("Mes requêtes")
+      .setLabel("My requests")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`${LIST_BUTTON_PREFIX}askinfo`)
-      .setLabel("Demander infos")
+      .setLabel("Request info")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(`${LIST_BUTTON_PREFIX}openthread`)
@@ -178,13 +178,13 @@ async function buildListPayload(page: number): Promise<{
     const title = (r.description || "(no description)").replace(/\n/g, " ").slice(0, 50);
     const who = r.memberTag ? `@${r.memberTag}` : r.memberId;
     const thread = r.threadId
-      ? ` · [ouvrir](https://discord.com/channels/${deps!.guildId}/${r.threadId})`
+      ? ` · [open](https://discord.com/channels/${deps!.guildId}/${r.threadId})`
       : "";
     return `**${id}** ${st} — ${title} — ${who}${thread}`;
   });
   const header =
-    `**Requêtes live** · filter **${filter.label}** · sort **${sort.label}** · ${total} total\n` +
-    `_Tout le monde peut utiliser les boutons. « Mes requêtes » est privé._\n`;
+    `**Live requests** · filter **${filter.label}** · sort **${sort.label}** · ${total} total\n` +
+    `_Tout le monde peut utiliser les boutons. « My requests » est privé._\n`;
   const body = lines.length ? lines.join("\n") : "_No requests for this filter._";
   return {
     content: `${header}\n${body}`.slice(0, 1900),
@@ -254,7 +254,7 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
         `• **${formatRequestId(r.id)}** · ${formatStatus(r.status)} · ${(r.description || "(no description)").replace(/\n/g, " ").slice(0, 50)}`,
     );
     await interaction.reply({
-      content: `**Tes requêtes** (${mine.length})\n${lines.join("\n")}`.slice(0, 1900),
+      content: `**Your requests** (${mine.length})\n${lines.join("\n")}`.slice(0, 1900),
       ephemeral: true,
       allowedMentions: noMentions,
     });
@@ -265,7 +265,7 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
     const staffOk = deps.isStaff ? await deps.isStaff(interaction.user.id) : false;
     if (!staffOk) {
       await interaction.reply({
-        content: "Seul le staff peut demander des informations.",
+        content: "Only staff can request information.",
         ephemeral: true,
         allowedMentions: noMentions,
       });
@@ -273,7 +273,7 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
     }
     const modal = new ModalBuilder()
       .setCustomId(ASK_INFO_MODAL_ID)
-      .setTitle("Demander des infos");
+      .setTitle("Request information");
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
@@ -285,7 +285,7 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId(ASK_INFO_Q_FIELD)
-          .setLabel("Question pour le membre")
+          .setLabel("Question for the member")
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true)
           .setMaxLength(1000),
@@ -364,7 +364,7 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
     }
     if (!request.threadId) {
       await interaction.reply({
-        content: `**${formatRequestId(requestId)}** n'a pas encore de thread.`,
+        content: `**${formatRequestId(requestId)}** does not have a thread yet.`,
         ephemeral: true,
         allowedMentions: noMentions,
       });
@@ -386,7 +386,7 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
   const staffOk = deps.isStaff ? await deps.isStaff(interaction.user.id) : false;
   if (!staffOk) {
     await interaction.reply({
-      content: "Seul le staff peut demander des informations.",
+      content: "Only staff can request information.",
       ephemeral: true,
       allowedMentions: noMentions,
     });
@@ -422,7 +422,7 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
     return;
   }
   await interaction.editReply({
-    content: `Question envoyée au membre pour **${formatRequestId(result.requestId)}**.`,
+    content: `Question sent to the member for **${formatRequestId(result.requestId)}**.`,
   });
   notifyListBoardChanged();
 }
