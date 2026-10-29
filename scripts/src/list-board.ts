@@ -13,6 +13,7 @@ import {
 } from "discord.js";
 import {
   countRequests,
+  findRequestById,
   formatRequestId,
   listRequests,
   parseRequestId,
@@ -27,6 +28,8 @@ const LIST_BUTTON_PREFIX = "request-list:";
 const ASK_INFO_MODAL_ID = "request-list:askinfo-modal";
 const ASK_INFO_REQ_FIELD = "requestId";
 const ASK_INFO_Q_FIELD = "question";
+const OPEN_THREAD_MODAL_ID = "request-list:openthread-modal";
+const OPEN_THREAD_REQ_FIELD = "requestId";
 const noMentions = { parse: [] as const };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -141,6 +144,10 @@ function buildButtons(page: number, totalPages: number): ActionRowBuilder<Button
       .setCustomId(`${LIST_BUTTON_PREFIX}askinfo`)
       .setLabel("Demander infos")
       .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`${LIST_BUTTON_PREFIX}openthread`)
+      .setLabel("Ouvrir thread")
+      .setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2];
 }
@@ -168,9 +175,12 @@ async function buildListPayload(page: number): Promise<{
   const lines = rows.map((r) => {
     const id = formatRequestId(r.id);
     const st = formatStatus(r.status);
-    const title = (r.description || "(no description)").replace(/\n/g, " ").slice(0, 60);
+    const title = (r.description || "(no description)").replace(/\n/g, " ").slice(0, 50);
     const who = r.memberTag ? `@${r.memberTag}` : r.memberId;
-    return `**${id}** ${st} — ${title} — ${who}`;
+    const thread = r.threadId
+      ? ` · [ouvrir](https://discord.com/channels/${deps!.guildId}/${r.threadId})`
+      : "";
+    return `**${id}** ${st} — ${title} — ${who}${thread}`;
   });
   const header =
     `**Requêtes live** · filter **${filter.label}** · sort **${sort.label}** · ${total} total\n` +
@@ -285,6 +295,23 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
     return;
   }
 
+  if (action === "openthread") {
+    const modal = new ModalBuilder()
+      .setCustomId(OPEN_THREAD_MODAL_ID)
+      .setTitle("Ouvrir le thread");
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId(OPEN_THREAD_REQ_FIELD)
+          .setLabel("ID requête (REQ-00042 ou 42)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true),
+      ),
+    );
+    await interaction.showModal(modal);
+    return;
+  }
+
   if (action === "filter") {
     currentFilterIndex = (currentFilterIndex + 1) % FILTER_CYCLE.length;
   } else if (action === "sort") {
@@ -309,11 +336,53 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
 }
 
 export function isListBoardModal(customId: string): boolean {
-  return customId === ASK_INFO_MODAL_ID;
+  return customId === ASK_INFO_MODAL_ID || customId === OPEN_THREAD_MODAL_ID;
 }
 
 export async function handleListBoardModal(interaction: ModalSubmitInteraction): Promise<void> {
   if (!deps || !isListBoardModal(interaction.customId)) return;
+
+  if (interaction.customId === OPEN_THREAD_MODAL_ID) {
+    const rawId = interaction.fields.getTextInputValue(OPEN_THREAD_REQ_FIELD).trim();
+    const requestId = parseRequestId(rawId);
+    if (!requestId) {
+      await interaction.reply({
+        content: "ID de requête invalide. Exemple : `REQ-00042` ou `42`.",
+        ephemeral: true,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    const request = await findRequestById(deps.guildId, requestId);
+    if (!request) {
+      await interaction.reply({
+        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        ephemeral: true,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    if (!request.threadId) {
+      await interaction.reply({
+        content: `**${formatRequestId(requestId)}** n'a pas encore de thread.`,
+        ephemeral: true,
+        allowedMentions: noMentions,
+      });
+      return;
+    }
+    const url = `https://discord.com/channels/${deps.guildId}/${request.threadId}`;
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le thread").setURL(url),
+    );
+    await interaction.reply({
+      content: `Thread de **${formatRequestId(request.id)}** (\`${request.status}\`) :`,
+      components: [row],
+      ephemeral: true,
+      allowedMentions: noMentions,
+    });
+    return;
+  }
+
   const staffOk = deps.isStaff ? await deps.isStaff(interaction.user.id) : false;
   if (!staffOk) {
     await interaction.reply({
