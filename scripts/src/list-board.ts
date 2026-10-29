@@ -204,6 +204,20 @@ async function refreshListBoard(page = currentPage): Promise<void> {
       : await resolveListChannel();
     if (!channel) return;
     listChannelId = channel.id;
+
+    // Reuse the existing live panel after a restart so its old language/content is updated
+    // instead of posting a second panel and leaving the stale one visible.
+    if (!listMessageId) {
+      const recentMessages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+      const existingPanel = recentMessages?.find(
+        (message) =>
+          message.author.id === deps!.client.user?.id &&
+          (message.content.includes("**Requêtes live**") ||
+            message.content.includes("**Live requests**")),
+      );
+      if (existingPanel) listMessageId = existingPanel.id;
+    }
+
     if (listMessageId) {
       const msg = await channel.messages.fetch(listMessageId).catch(() => null);
       if (msg) {
