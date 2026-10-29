@@ -548,3 +548,24 @@ export async function listCommandPermissions(guildId: string, userId?: string) {
     .orderBy(asc(discordCommandPermissionsTable.commandName));
 }
 
+/** Fetch open requests for reminder/expiration maintenance jobs. */
+export async function listRequestsForMaintenance(guildId: string) {
+  return db
+    .select()
+    .from(discordRequestsTable)
+    .where(
+      and(
+        eq(discordRequestsTable.guildId, guildId),
+        inArray(discordRequestsTable.status, [
+          "awaiting_member",
+          "waiting_on_member",
+          "received",
+          "needs_info",
+          "accepted",
+          "in_progress",
+        ]),
+      ),
+    )
+    .orderBy(asc(discordRequestsTable.lastActivityAt));
+}
+
