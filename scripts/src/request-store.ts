@@ -537,3 +537,14 @@ export async function listAllRequestsForBackup(guildId: string) {
   return listAllRequestData(guildId);
 }
 
+/** List explicit command grants/overrides for a guild, optionally for one user. */
+export async function listCommandPermissions(guildId: string, userId?: string) {
+  const conditions = [eq(discordCommandPermissionsTable.guildId, guildId)];
+  if (userId) conditions.push(eq(discordCommandPermissionsTable.userId, userId));
+  return db
+    .select()
+    .from(discordCommandPermissionsTable)
+    .where(and(...conditions))
+    .orderBy(asc(discordCommandPermissionsTable.commandName));
+}
+
