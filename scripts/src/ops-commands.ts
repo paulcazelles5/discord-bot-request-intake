@@ -290,7 +290,7 @@ export async function handleHealthcheckCommand(
         ? ` · last <t:${Math.floor(groqStats.lastCallAt / 1000)}:R>`
         : " · last never"),
     "",
-    "_Maintenance auto: rappels membre J+1/5/9/10 + pings staff (toutes les heures)._",
+    "_Automatic maintenance: member reminders on days 1/5/9/10 + staff notifications (hourly)._",
   ];
 
   await message.reply({ content: lines.join("\n").slice(0, 1900), allowedMentions: noMentions });
@@ -307,7 +307,7 @@ export async function handleMyRequestsCommand(
     sort: "newest",
   });
   if (!rows.length) {
-    await message.reply({ content: "Tu n'as aucune requête pour le moment.", allowedMentions: noMentions });
+    await message.reply({ content: "You don't have any requests yet.", allowedMentions: noMentions });
     return;
   }
 
@@ -324,12 +324,12 @@ export async function handleMyRequestsCommand(
     const desc = String(r.description ?? "").replace(/\n/g, " ").slice(0, 50);
     lines.push(
       `• **${formatRequestId(r.id)}** · \`${r.status}\` · ${ageDays}j` +
-        `${threadPart}\n  ${desc || "_sans description_"}${pendingPart}`,
+        `${threadPart}\n  ${desc || "_no description_"}${pendingPart}`,
     );
   }
 
   await message.reply({
-    content: `**Tes requêtes** (${rows.length})\n${lines.join("\n")}`.slice(0, 1900),
+    content: `**Your requests** (${rows.length})\n${lines.join("\n")}`.slice(0, 1900),
     allowedMentions: noMentions,
   });
 }
@@ -365,8 +365,8 @@ export async function handleStatusCommand(
   if (!request) {
     await message.reply({
       content: query
-        ? `Requête introuvable pour \`${query}\`.`
-        : "Tu n'as aucune requête. Usage : `!status` ou `!status REQ-42`.",
+        ? `Request not found for \`${query}\`.`
+        : "You don't have any requests. Usage: `!status` ou `!status REQ-42`.",
       allowedMentions: noMentions,
     });
     return;
@@ -374,7 +374,7 @@ export async function handleStatusCommand(
 
   if (!options.isStaff && request.memberId !== message.author.id) {
     await message.reply({
-      content: "Tu ne peux consulter que tes propres requêtes.",
+      content: "You can only view your own requests.",
       allowedMentions: noMentions,
     });
     return;
@@ -392,9 +392,9 @@ export async function handleStatusCommand(
   const lines = [
     `**${formatRequestId(request.id)}**`,
     `Status: \`${request.status}\` · Stage: \`${request.stage}\``,
-    `Membre: <@${request.memberId}>`,
-    request.assignedToId ? `Assigné: <@${request.assignedToId}>` : "Assigné: —",
-    `Créée: <t:${Math.floor(new Date(request.createdAt).getTime() / 1000)}:f> (${ageDays}j)`,
+    `Member: <@${request.memberId}>`,
+    request.assignedToId ? `Assigned to: <@${request.assignedToId}>` : "Assigned to: —",
+    `Created: <t:${Math.floor(new Date(request.createdAt).getTime() / 1000)}:f> (${ageDays}j)`,
     `MAJ: <t:${Math.floor(new Date(request.updatedAt).getTime() / 1000)}:R> (${updatedDays}j)`,
     threadLine,
     `Description: ${String(request.description ?? "").slice(0, 300) || "—"}`,
@@ -406,7 +406,7 @@ export async function handleStatusCommand(
       "",
       `**Question en attente** (${fAge}j) :`,
       `> ${String(pending.question).slice(0, 400)}`,
-      "_Réponds en DM au bot ou avec `!resume`._",
+      "_Reply to the bot by DM or use `!resume`._",
     );
   } else if (followups.length) {
     const last = followups[followups.length - 1]!;
@@ -472,14 +472,14 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
           details: "member_no_reply_10d",
         });
         const msg =
-          `**${formatRequestId(request.id)}** a expiré : aucune réponse après 10 jours.\n` +
+          `**${formatRequestId(request.id)}** expired: no response after 10 days.\n` +
           `Pour recommencer, utilise \`!request\` dans le serveur.`;
         if (deps.notifyMember) await deps.notifyMember(request, msg).catch(() => undefined);
         if (deps.postInRequestThread) {
           await deps
             .postInRequestThread(
               request,
-              `⏳ ${formatRequestId(request.id)} **expiré** (membre sans réponse après 10 jours).`,
+              `⏳ ${formatRequestId(request.id)} **expired** (member did not respond after 10 days).`,
             )
             .catch(() => undefined);
         }
@@ -492,12 +492,12 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
       if (await hasEvent(request.id, step.event)) continue;
       const dayLabel = Math.round(step.afterMs / DAY_MS);
       let content =
-        `Rappel concernant **${formatRequestId(request.id)}** : l'équipe attend toujours ta réponse.\n\n` +
+        `Reminder for **${formatRequestId(request.id)}** : the team is still waiting for your response.\n\n` +
         `**Question :** ${followup.question}\n\n` +
         `Réponds en DM ou utilise \`!resume\` dans le serveur.`;
       if (step.warn) {
         content +=
-          `\n\n⚠️ **Attention** : sans réponse d'ici demain, cette demande sera **automatiquement expirée**.`;
+          `\n\n⚠️ **Warning**: without a response by tomorrow, this request will **expire automatically**.`;
       }
       try {
         if (deps.notifyMember) await deps.notifyMember(request, content);
@@ -511,7 +511,7 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
           await deps
             .postInRequestThread(
               request,
-              `🔔 Rappel membre J+${dayLabel} envoyé pour ${formatRequestId(request.id)}.` +
+              `🔔 Member reminder day ${dayLabel} sent for ${formatRequestId(request.id)}.` +
                 (step.warn ? " (avertissement expiration J+10)" : ""),
             )
             .catch(() => undefined);
@@ -554,7 +554,7 @@ export async function handleAddThreadCommand(
 ): Promise<void> {
   if (!options.isStaff) {
     await message.reply({
-      content: "Seul le staff peut ajouter un membre à un thread de requête.",
+      content: "Only staff can add a member to a request thread.",
       allowedMentions: noMentions,
     });
     return;
@@ -564,8 +564,8 @@ export async function handleAddThreadCommand(
   if (tokens.length === 0) {
     await message.reply({
       content:
-        "Usage : `!addthread REQ-00042 @user`\n" +
-        "Ou dans le thread de la requête : `!addthread @user`",
+        "Usage: `!addthread REQ-00042 @user`\n" +
+        "Or inside the request thread: `!addthread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -590,7 +590,7 @@ export async function handleAddThreadCommand(
 
   if (!targetUserId) {
     await message.reply({
-      content: "Indique le membre à ajouter : `!addthread REQ-42 @user`",
+      content: "Specify the member to add: `!addthread REQ-42 @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -612,14 +612,14 @@ export async function handleAddThreadCommand(
     const request = await findRequestById(options.guildId, requestId);
     if (!request) {
       await message.reply({
-        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        content: `Request **${formatRequestId(requestId)}** not found.`,
         allowedMentions: noMentions,
       });
       return;
     }
     if (!request.threadId) {
       await message.reply({
-        content: `**${formatRequestId(requestId)}** n'a pas encore de thread.`,
+        content: `**${formatRequestId(requestId)}** does not have a thread yet.`,
         allowedMentions: noMentions,
       });
       return;
@@ -632,8 +632,8 @@ export async function handleAddThreadCommand(
   } else {
     await message.reply({
       content:
-        "Précise la requête : `!addthread REQ-42 @user`\n" +
-        "Ou lance la commande **dans** le thread de la requête : `!addthread @user`",
+        "Specify the request: `!addthread REQ-42 @user`\n" +
+        "Or run the command **inside** the request thread: `!addthread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -643,7 +643,7 @@ export async function handleAddThreadCommand(
     const channel = await options.client.channels.fetch(threadId);
     if (!channel || !channel.isThread()) {
       await message.reply({
-        content: `Impossible de trouver le thread pour ${requestLabel}.`,
+        content: `Could not find the thread for ${requestLabel}.`,
         allowedMentions: noMentions,
       });
       return;
@@ -665,13 +665,13 @@ export async function handleAddThreadCommand(
     }
 
     await message.reply({
-      content: `✅ <@${targetUserId}> ajouté au thread de **${requestLabel}**.`,
+      content: `✅ <@${targetUserId}> added to the thread for **${requestLabel}**.`,
       allowedMentions: { users: [targetUserId] },
     });
 
     await channel
       .send({
-        content: `➕ <@${targetUserId}> a été ajouté au thread par <@${message.author.id}>.`,
+        content: `➕ <@${targetUserId}> was added to the thread by <@${message.author.id}>.`,
         allowedMentions: { users: [targetUserId] },
       })
       .catch(() => undefined);
@@ -679,8 +679,8 @@ export async function handleAddThreadCommand(
     const msg = error instanceof Error ? error.message : String(error);
     await message.reply({
       content:
-        `❌ Impossible d'ajouter le membre au thread.\n` +
-        `Vérifie que le bot a **Manage Threads** / accès au thread.\n` +
+        `❌ Could not add the member to the thread.\n` +
+        `Make sure the bot has **Manage Threads** / access to the thread.\n` +
         `\`${msg.slice(0, 200)}\``,
       allowedMentions: noMentions,
     });
@@ -694,7 +694,7 @@ export async function handleRemoveThreadCommand(
 ): Promise<void> {
   if (!options.isStaff) {
     await message.reply({
-      content: "Seul le staff peut retirer un membre d'un thread de requête.",
+      content: "Only staff can remove a member from a request thread.",
       allowedMentions: noMentions,
     });
     return;
@@ -704,8 +704,8 @@ export async function handleRemoveThreadCommand(
   if (tokens.length === 0) {
     await message.reply({
       content:
-        "Usage : `!removethread REQ-00042 @user`\n" +
-        "Ou dans le thread de la requête : `!removethread @user`",
+        "Usage: `!removethread REQ-00042 @user`\n" +
+        "Or inside the request thread: `!removethread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -730,7 +730,7 @@ export async function handleRemoveThreadCommand(
 
   if (!targetUserId) {
     await message.reply({
-      content: "Indique le membre à retirer : `!removethread REQ-42 @user`",
+      content: "Specify the member to remove: `!removethread REQ-42 @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -752,14 +752,14 @@ export async function handleRemoveThreadCommand(
     const request = await findRequestById(options.guildId, requestId);
     if (!request) {
       await message.reply({
-        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        content: `Request **${formatRequestId(requestId)}** not found.`,
         allowedMentions: noMentions,
       });
       return;
     }
     if (!request.threadId) {
       await message.reply({
-        content: `**${formatRequestId(requestId)}** n'a pas de thread.`,
+        content: `**${formatRequestId(requestId)}** does not have a thread.`,
         allowedMentions: noMentions,
       });
       return;
@@ -772,8 +772,8 @@ export async function handleRemoveThreadCommand(
   } else {
     await message.reply({
       content:
-        "Précise la requête : `!removethread REQ-42 @user`\n" +
-        "Ou lance la commande **dans** le thread : `!removethread @user`",
+        "Specify the request: `!removethread REQ-42 @user`\n" +
+        "Or run the command **inside** the thread: `!removethread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -783,7 +783,7 @@ export async function handleRemoveThreadCommand(
     const channel = await options.client.channels.fetch(threadId);
     if (!channel || !channel.isThread()) {
       await message.reply({
-        content: `Impossible de trouver le thread pour ${requestLabel}.`,
+        content: `Could not find the thread for ${requestLabel}.`,
         allowedMentions: noMentions,
       });
       return;
@@ -805,13 +805,13 @@ export async function handleRemoveThreadCommand(
     }
 
     await message.reply({
-      content: `✅ <@${targetUserId}> retiré du thread de **${requestLabel}**.`,
+      content: `✅ <@${targetUserId}> removed from the thread for **${requestLabel}**.`,
       allowedMentions: { users: [targetUserId] },
     });
 
     await channel
       .send({
-        content: `➖ <@${targetUserId}> a été retiré du thread par <@${message.author.id}>.`,
+        content: `➖ <@${targetUserId}> was removed from the thread by <@${message.author.id}>.`,
         allowedMentions: { users: [targetUserId] },
       })
       .catch(() => undefined);
@@ -819,8 +819,8 @@ export async function handleRemoveThreadCommand(
     const msg = error instanceof Error ? error.message : String(error);
     await message.reply({
       content:
-        `❌ Impossible de retirer le membre du thread.\n` +
-        `Vérifie que le bot a **Manage Threads**.\n` +
+        `❌ Could not remove the member from the thread.\n` +
+        `Make sure the bot has **Manage Threads**.\n` +
         `\`${msg.slice(0, 200)}\``,
       allowedMentions: noMentions,
     });
