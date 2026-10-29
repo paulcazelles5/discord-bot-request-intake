@@ -146,7 +146,7 @@ function buildButtons(page: number, totalPages: number): ActionRowBuilder<Button
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(`${LIST_BUTTON_PREFIX}openthread`)
-      .setLabel("Ouvrir thread")
+      .setLabel("Open thread")
       .setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2];
@@ -243,7 +243,7 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
     });
     if (!mine.length) {
       await interaction.reply({
-        content: "Tu n'as aucune requête.",
+        content: "You don't have any requests.",
         ephemeral: true,
         allowedMentions: noMentions,
       });
@@ -278,7 +278,7 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId(ASK_INFO_REQ_FIELD)
-          .setLabel("ID requête (REQ-00042 ou 42)")
+          .setLabel("Request ID (REQ-00042 or 42)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true),
       ),
@@ -298,12 +298,12 @@ export async function handleListBoardButton(interaction: ButtonInteraction): Pro
   if (action === "openthread") {
     const modal = new ModalBuilder()
       .setCustomId(OPEN_THREAD_MODAL_ID)
-      .setTitle("Ouvrir le thread");
+      .setTitle("Open thread");
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId(OPEN_THREAD_REQ_FIELD)
-          .setLabel("ID requête (REQ-00042 ou 42)")
+          .setLabel("Request ID (REQ-00042 or 42)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true),
       ),
@@ -347,7 +347,7 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
     const requestId = parseRequestId(rawId);
     if (!requestId) {
       await interaction.reply({
-        content: "ID de requête invalide. Exemple : `REQ-00042` ou `42`.",
+        content: "Invalid request ID. Example: `REQ-00042` or `42`.",
         ephemeral: true,
         allowedMentions: noMentions,
       });
@@ -356,7 +356,7 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
     const request = await findRequestById(deps.guildId, requestId);
     if (!request) {
       await interaction.reply({
-        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        content: `Request **${formatRequestId(requestId)}** not found.`,
         ephemeral: true,
         allowedMentions: noMentions,
       });
@@ -372,10 +372,10 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
     }
     const url = `https://discord.com/channels/${deps.guildId}/${request.threadId}`;
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le thread").setURL(url),
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Open thread").setURL(url),
     );
     await interaction.reply({
-      content: `Thread de **${formatRequestId(request.id)}** (\`${request.status}\`) :`,
+      content: `Thread for **${formatRequestId(request.id)}** (\`${request.status}\`) :`,
       components: [row],
       ephemeral: true,
       allowedMentions: noMentions,
@@ -397,7 +397,7 @@ export async function handleListBoardModal(interaction: ModalSubmitInteraction):
   const requestId = parseRequestId(rawId);
   if (!requestId) {
     await interaction.reply({
-      content: "ID de requête invalide. Exemple : `REQ-00042` ou `42`.",
+      content: "Invalid request ID. Example: `REQ-00042` or `42`.",
       ephemeral: true,
       allowedMentions: noMentions,
     });
