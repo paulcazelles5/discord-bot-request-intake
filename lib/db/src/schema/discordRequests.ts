@@ -144,6 +144,21 @@ export const discordBotSettingsTable = pgTable("discord_bot_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const discordRequestLimitBypassesTable = pgTable(
+  "discord_request_limit_bypasses",
+  {
+    guildId: text("guild_id").notNull(),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "discord_request_limit_bypasses_pk",
+      columns: [table.guildId, table.userId],
+    }),
+  ],
+);
+
 export const insertDiscordRequestSchema = createInsertSchema(discordRequestsTable).omit({
   id: true,
   createdAt: true,
