@@ -532,3 +532,8 @@ export async function listAllRequestData(guildId: string) {
   return requests;
 }
 
+/** Compatibility alias used by the bot's backup command. */
+export async function listAllRequestsForBackup(guildId: string) {
+  return listAllRequestData(guildId);
+}
+
