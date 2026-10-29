@@ -494,7 +494,7 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
       let content =
         `Reminder for **${formatRequestId(request.id)}** : the team is still waiting for your response.\n\n` +
         `**Question :** ${followup.question}\n\n` +
-        `Réponds en DM ou utilise \`!resume\` dans le serveur.`;
+        `Reply by DM or use \`!resume\` dans le serveur.`;
       if (step.warn) {
         content +=
           `\n\n⚠️ **Warning**: without a response by tomorrow, this request will **expire automatically**.`;
