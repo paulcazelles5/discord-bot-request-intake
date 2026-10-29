@@ -307,7 +307,7 @@ export async function handleMyRequestsCommand(
     sort: "newest",
   });
   if (!rows.length) {
-    await message.reply({ content: "Tu n'as aucune requête pour le moment.", allowedMentions: noMentions });
+    await message.reply({ content: "You don't have any requests yet.", allowedMentions: noMentions });
     return;
   }
 
@@ -365,8 +365,8 @@ export async function handleStatusCommand(
   if (!request) {
     await message.reply({
       content: query
-        ? `Requête introuvable pour \`${query}\`.`
-        : "Tu n'as aucune requête. Usage : `!status` ou `!status REQ-42`.",
+        ? `Request not found for \`${query}\`.`
+        : "You don't have any requests. Usage: `!status` ou `!status REQ-42`.",
       allowedMentions: noMentions,
     });
     return;
@@ -374,7 +374,7 @@ export async function handleStatusCommand(
 
   if (!options.isStaff && request.memberId !== message.author.id) {
     await message.reply({
-      content: "Tu ne peux consulter que tes propres requêtes.",
+      content: "You can only view your own requests.",
       allowedMentions: noMentions,
     });
     return;
@@ -497,7 +497,7 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
         `Réponds en DM ou utilise \`!resume\` dans le serveur.`;
       if (step.warn) {
         content +=
-          `\n\n⚠️ **Attention** : sans réponse d'ici demain, cette demande sera **automatiquement expirée**.`;
+          `\n\n⚠️ **Heads up**: if there is no reply by tomorrow, this request will **automatically expire**.`;
       }
       try {
         if (deps.notifyMember) await deps.notifyMember(request, content);
@@ -554,7 +554,7 @@ export async function handleAddThreadCommand(
 ): Promise<void> {
   if (!options.isStaff) {
     await message.reply({
-      content: "Seul le staff peut ajouter un membre à un thread de requête.",
+      content: "Only staff can add a member to a request thread.",
       allowedMentions: noMentions,
     });
     return;
@@ -565,7 +565,7 @@ export async function handleAddThreadCommand(
     await message.reply({
       content:
         "Usage : `!addthread REQ-00042 @user`\n" +
-        "Ou dans le thread de la requête : `!addthread @user`",
+        "Or in the request thread: `!addthread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -612,14 +612,14 @@ export async function handleAddThreadCommand(
     const request = await findRequestById(options.guildId, requestId);
     if (!request) {
       await message.reply({
-        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        content: `Request **${formatRequestId(requestId)}** not found.`,
         allowedMentions: noMentions,
       });
       return;
     }
     if (!request.threadId) {
       await message.reply({
-        content: `**${formatRequestId(requestId)}** n'a pas encore de thread.`,
+        content: `**${formatRequestId(requestId)}** does not have a thread yet.`,
         allowedMentions: noMentions,
       });
       return;
@@ -633,7 +633,7 @@ export async function handleAddThreadCommand(
     await message.reply({
       content:
         "Précise la requête : `!addthread REQ-42 @user`\n" +
-        "Ou lance la commande **dans** le thread de la requête : `!addthread @user`",
+        "Or run the command **inside** the request thread: `!addthread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -643,7 +643,7 @@ export async function handleAddThreadCommand(
     const channel = await options.client.channels.fetch(threadId);
     if (!channel || !channel.isThread()) {
       await message.reply({
-        content: `Impossible de trouver le thread pour ${requestLabel}.`,
+        content: `Could not find the thread for ${requestLabel}.`,
         allowedMentions: noMentions,
       });
       return;
@@ -665,13 +665,13 @@ export async function handleAddThreadCommand(
     }
 
     await message.reply({
-      content: `✅ <@${targetUserId}> ajouté au thread de **${requestLabel}**.`,
+      content: `✅ Added <@${targetUserId}> to the thread for **${requestLabel}**.`,
       allowedMentions: { users: [targetUserId] },
     });
 
     await channel
       .send({
-        content: `➕ <@${targetUserId}> a été ajouté au thread par <@${message.author.id}>.`,
+        content: `➕ <@${targetUserId}> was added to the thread by <@${message.author.id}>.`,
         allowedMentions: { users: [targetUserId] },
       })
       .catch(() => undefined);
@@ -679,8 +679,8 @@ export async function handleAddThreadCommand(
     const msg = error instanceof Error ? error.message : String(error);
     await message.reply({
       content:
-        `❌ Impossible d'ajouter le membre au thread.\n` +
-        `Vérifie que le bot a **Manage Threads** / accès au thread.\n` +
+        `❌ Could not add the member to the thread.\n` +
+        `Make sure the bot has **Manage Threads** permission / access to the thread.\n` +
         `\`${msg.slice(0, 200)}\``,
       allowedMentions: noMentions,
     });
@@ -694,7 +694,7 @@ export async function handleRemoveThreadCommand(
 ): Promise<void> {
   if (!options.isStaff) {
     await message.reply({
-      content: "Seul le staff peut retirer un membre d'un thread de requête.",
+      content: "Only staff can remove a member from a request thread.",
       allowedMentions: noMentions,
     });
     return;
@@ -705,7 +705,7 @@ export async function handleRemoveThreadCommand(
     await message.reply({
       content:
         "Usage : `!removethread REQ-00042 @user`\n" +
-        "Ou dans le thread de la requête : `!removethread @user`",
+        "Or in the request thread: `!removethread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -752,14 +752,14 @@ export async function handleRemoveThreadCommand(
     const request = await findRequestById(options.guildId, requestId);
     if (!request) {
       await message.reply({
-        content: `Requête **${formatRequestId(requestId)}** introuvable.`,
+        content: `Request **${formatRequestId(requestId)}** not found.`,
         allowedMentions: noMentions,
       });
       return;
     }
     if (!request.threadId) {
       await message.reply({
-        content: `**${formatRequestId(requestId)}** n'a pas de thread.`,
+        content: `**${formatRequestId(requestId)}** does not have a thread.`,
         allowedMentions: noMentions,
       });
       return;
@@ -773,7 +773,7 @@ export async function handleRemoveThreadCommand(
     await message.reply({
       content:
         "Précise la requête : `!removethread REQ-42 @user`\n" +
-        "Ou lance la commande **dans** le thread : `!removethread @user`",
+        "Or run the command **inside** the thread: `!removethread @user`",
       allowedMentions: noMentions,
     });
     return;
@@ -783,7 +783,7 @@ export async function handleRemoveThreadCommand(
     const channel = await options.client.channels.fetch(threadId);
     if (!channel || !channel.isThread()) {
       await message.reply({
-        content: `Impossible de trouver le thread pour ${requestLabel}.`,
+        content: `Could not find the thread for ${requestLabel}.`,
         allowedMentions: noMentions,
       });
       return;
@@ -805,13 +805,13 @@ export async function handleRemoveThreadCommand(
     }
 
     await message.reply({
-      content: `✅ <@${targetUserId}> retiré du thread de **${requestLabel}**.`,
+      content: `✅ Removed <@${targetUserId}> from the thread for **${requestLabel}**.`,
       allowedMentions: { users: [targetUserId] },
     });
 
     await channel
       .send({
-        content: `➖ <@${targetUserId}> a été retiré du thread par <@${message.author.id}>.`,
+        content: `➖ <@${targetUserId}> was removed from the thread by <@${message.author.id}>.`,
         allowedMentions: { users: [targetUserId] },
       })
       .catch(() => undefined);
@@ -819,7 +819,7 @@ export async function handleRemoveThreadCommand(
     const msg = error instanceof Error ? error.message : String(error);
     await message.reply({
       content:
-        `❌ Impossible de retirer le membre du thread.\n` +
+        `❌ Could not remove the member from the thread.\n` +
         `Vérifie que le bot a **Manage Threads**.\n` +
         `\`${msg.slice(0, 200)}\``,
       allowedMentions: noMentions,
