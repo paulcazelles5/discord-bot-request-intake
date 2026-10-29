@@ -486,3 +486,39 @@ export async function revokeCommandPermission(input: {
       ),
     );
 }
+
+/**
+ * Delete closed requests older than the configured retention period.
+ * Accepts either a number of days or an explicit cutoff date.
+ * Open requests are never deleted.
+ */
+export async function deleteRetainedRequests(
+  guildId: string,
+  retention: number | Date | null | undefined,
+): Promise<number> {
+  if (retention == null || retention === 0) return 0;
+  const cutoff =
+    retention instanceof Date
+      ? retention
+      : new Date(Date.now() - Math.max(1, retention) * 24 * 60 * 60 * 1000);
+  if (Number.isNaN(cutoff.getTime())) return 0;
+
+  const closedStatuses: RequestStatus[] = [
+    "completed",
+    "declined",
+    "cancelled",
+    "expired",
+  ];
+  const deleted = await db
+    .delete(discordRequestsTable)
+    .where(
+      and(
+        eq(discordRequestsTable.guildId, guildId),
+        inArray(discordRequestsTable.status, closedStatuses),
+        lt(discordRequestsTable.closedAt, cutoff),
+      ),
+    )
+    .returning({ id: discordRequestsTable.id });
+  return deleted.length;
+}
+
