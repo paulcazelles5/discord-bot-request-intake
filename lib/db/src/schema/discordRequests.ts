@@ -72,7 +72,8 @@ export const discordRequestAttachmentsTable = pgTable(
     fileName: text("file_name").notNull(),
     contentType: text("content_type").notNull(),
     byteSize: integer("byte_size").notNull(),
-    threadMessageId: text("thread_message_id").notNull(),
+    threadMessageId: text("thread_message_id"),
+    url: text("url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -141,6 +142,8 @@ export const discordBotSettingsTable = pgTable("discord_bot_settings", {
   guildId: text("guild_id").primaryKey(),
   logChannelId: text("log_channel_id"),
   retentionDays: integer("retention_days"),
+  requestDailyLimit: integer("request_daily_limit").notNull().default(3),
+  listChannelId: text("list_channel_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
