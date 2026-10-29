@@ -319,7 +319,7 @@ export async function handleMyRequestsCommand(
       ? ` · [thread](https://discord.com/channels/${options.guildId}/${r.threadId})`
       : "";
     const pendingPart = pending
-      ? `\n  ⏳ Question en attente : ${String(pending.question).slice(0, 80)}`
+      ? `\n  ⏳ Pending question : ${String(pending.question).slice(0, 80)}`
       : "";
     const desc = String(r.description ?? "").replace(/\n/g, " ").slice(0, 50);
     lines.push(
@@ -394,8 +394,8 @@ export async function handleStatusCommand(
     `Status: \`${request.status}\` · Stage: \`${request.stage}\``,
     `Membre: <@${request.memberId}>`,
     request.assignedToId ? `Assigné: <@${request.assignedToId}>` : "Assigné: —",
-    `Créée: <t:${Math.floor(new Date(request.createdAt).getTime() / 1000)}:f> (${ageDays}j)`,
-    `MAJ: <t:${Math.floor(new Date(request.updatedAt).getTime() / 1000)}:R> (${updatedDays}j)`,
+    `Created: <t:${Math.floor(new Date(request.createdAt).getTime() / 1000)}:f> (${ageDays}d)`,
+    `MAJ: <t:${Math.floor(new Date(request.updatedAt).getTime() / 1000)}:R> (${updatedDays}d)`,
     threadLine,
     `Description: ${String(request.description ?? "").slice(0, 300) || "—"}`,
   ];
@@ -404,7 +404,7 @@ export async function handleStatusCommand(
     const fAge = Math.floor((Date.now() - new Date(pending.createdAt).getTime()) / DAY_MS);
     lines.push(
       "",
-      `**Question en attente** (${fAge}j) :`,
+      `**Pending question** (${fAge}j) :`,
       `> ${String(pending.question).slice(0, 400)}`,
       "_Réponds en DM au bot ou avec `!resume`._",
     );
@@ -472,14 +472,14 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
           details: "member_no_reply_10d",
         });
         const msg =
-          `**${formatRequestId(request.id)}** a expiré : aucune réponse après 10 jours.\n` +
+          `**${formatRequestId(request.id)}** expired: no reply after 10 days.\n` +
           `Pour recommencer, utilise \`!request\` dans le serveur.`;
         if (deps.notifyMember) await deps.notifyMember(request, msg).catch(() => undefined);
         if (deps.postInRequestThread) {
           await deps
             .postInRequestThread(
               request,
-              `⏳ ${formatRequestId(request.id)} **expiré** (membre sans réponse après 10 jours).`,
+              `⏳ ${formatRequestId(request.id)} **expired** (member did not reply within 10 days).`,
             )
             .catch(() => undefined);
         }
@@ -492,7 +492,7 @@ export async function processOpsMaintenance(deps: OpsMaintenanceDeps): Promise<v
       if (await hasEvent(request.id, step.event)) continue;
       const dayLabel = Math.round(step.afterMs / DAY_MS);
       let content =
-        `Rappel concernant **${formatRequestId(request.id)}** : l'équipe attend toujours ta réponse.\n\n` +
+        `Reminder for **${formatRequestId(request.id)}**: the team is still waiting for your reply.\n\n` +
         `**Question :** ${followup.question}\n\n` +
         `Réponds en DM ou utilise \`!resume\` dans le serveur.`;
       if (step.warn) {
@@ -632,7 +632,7 @@ export async function handleAddThreadCommand(
   } else {
     await message.reply({
       content:
-        "Précise la requête : `!addthread REQ-42 @user`\n" +
+        "Specify the request: `!addthread REQ-42 @user`\n" +
         "Or run the command **inside** the request thread: `!addthread @user`",
       allowedMentions: noMentions,
     });
@@ -772,7 +772,7 @@ export async function handleRemoveThreadCommand(
   } else {
     await message.reply({
       content:
-        "Précise la requête : `!removethread REQ-42 @user`\n" +
+        "Specify the request: `!removethread REQ-42 @user`\n" +
         "Or run the command **inside** the thread: `!removethread @user`",
       allowedMentions: noMentions,
     });
@@ -820,7 +820,7 @@ export async function handleRemoveThreadCommand(
     await message.reply({
       content:
         `❌ Could not remove the member from the thread.\n` +
-        `Vérifie que le bot a **Manage Threads**.\n` +
+        `Make sure the bot has **Manage Threads** permission.\n` +
         `\`${msg.slice(0, 200)}\``,
       allowedMentions: noMentions,
     });
