@@ -184,7 +184,7 @@ async function buildListPayload(page: number): Promise<{
   });
   const header =
     `**Live requests** · filter **${filter.label}** · sort **${sort.label}** · ${total} total\n` +
-    `_Tout le monde peut utiliser les boutons. « My requests » est privé._\n`;
+    `_Anyone can use the buttons. “My requests” is private._\n`;
   const body = lines.length ? lines.join("\n") : "_No requests for this filter._";
   return {
     content: `${header}\n${body}`.slice(0, 1900),
