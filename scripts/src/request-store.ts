@@ -522,3 +522,13 @@ export async function deleteRetainedRequests(
   return deleted.length;
 }
 
+/** Return all request records for a guild, newest first, for backup/export tools. */
+export async function listAllRequestData(guildId: string) {
+  const requests = await db
+    .select()
+    .from(discordRequestsTable)
+    .where(eq(discordRequestsTable.guildId, guildId))
+    .orderBy(desc(discordRequestsTable.createdAt));
+  return requests;
+}
+
