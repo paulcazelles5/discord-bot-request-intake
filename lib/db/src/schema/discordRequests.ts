@@ -137,9 +137,27 @@ export const discordOwnerAccessTable = pgTable(
   ],
 );
 
+/** Per-user bypass of the daily request limit. */
+export const discordRequestLimitBypassesTable = pgTable(
+  "discord_request_limit_bypasses",
+  {
+    guildId: text("guild_id").notNull(),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: "discord_request_limit_bypasses_pk",
+      columns: [table.guildId, table.userId],
+    }),
+  ],
+);
+
 export const discordBotSettingsTable = pgTable("discord_bot_settings", {
   guildId: text("guild_id").primaryKey(),
   logChannelId: text("log_channel_id"),
+  listChannelId: text("list_channel_id"),
+  requestDailyLimit: integer("request_daily_limit").notNull().default(3),
   retentionDays: integer("retention_days"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
