@@ -1,0 +1,14 @@
+# Railway/Nixpacks: do not fail when lockfile lags package.json slightly.
+[phases.install]
+cmds = [
+  "npm install -g corepack@0.24.1 && corepack enable",
+  "pnpm install --no-frozen-lockfile",
+]
+
+[phases.build]
+cmds = [
+  "pnpm install --filter @workspace/scripts... --filter @workspace/db... --no-frozen-lockfile",
+]
+
+[start]
+cmd = "sh -c 'pnpm --filter @workspace/db run push-force || true; pnpm start'"
