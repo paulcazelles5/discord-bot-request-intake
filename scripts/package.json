@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "hello": "tsx ./src/hello.ts",
+    "hello": "node --import tsx ./src/hello.ts",
     "assemble-bot": "node ./src/assemble-bot.mjs",
-    "discord-bot": "node ./src/assemble-bot.mjs && node ./src/patch-boot.mjs && tsx ./src/discord-bot.ts",
-    "start": "node ./src/assemble-bot.mjs && node ./src/patch-boot.mjs && tsx ./src/discord-bot.ts",
+    "discord-bot": "node ./src/assemble-bot.mjs && node ./src/patch-boot.mjs && node --import tsx ./src/discord-bot.ts",
+    "start": "node ./src/assemble-bot.mjs && node ./src/patch-boot.mjs && node --import tsx ./src/discord-bot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
