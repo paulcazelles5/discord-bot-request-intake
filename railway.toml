@@ -1,13 +1,12 @@
 # Railway config for the Discord request bot (worker — no HTTP server)
 [build]
 builder = "nixpacks"
-# Install only the bot workspace + DB (skip heavy frontend artifacts).
-# No --frozen-lockfile: avoids hard fail when lockfile drifts slightly.
+# Install bot + db workspaces (and their deps). Avoid frozen lockfile hard-fail.
 buildCommand = "corepack enable && pnpm install --filter @workspace/scripts... --filter @workspace/db..."
 
 [deploy]
-# Push Drizzle schema (needed on a fresh Postgres), then start the bot.
-startCommand = "pnpm --filter @workspace/db run push-force; pnpm start"
+# Create/update tables on fresh Postgres (ignore failure), then start the bot.
+startCommand = "sh -c 'pnpm --filter @workspace/db run push-force || true; pnpm start'"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 # Discord bots are long-running workers; they do not bind an HTTP port.
