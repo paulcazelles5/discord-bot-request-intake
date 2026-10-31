@@ -1,0 +1,23 @@
+# Fly.io config for the Discord request bot (long-running worker)
+app = "creatorbot"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+# Discord bots do not need a public HTTP port.
+# Secrets (set via `fly secrets set`):
+#   DISCORD_BOT_TOKEN
+#   DATABASE_URL
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[restart]
+  policy = "always"
+  retries = 10
