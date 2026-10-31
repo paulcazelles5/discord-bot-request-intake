@@ -1,0 +1,12 @@
+node_modules
+.git
+.replit
+.replitignore
+replit.md
+artifacts
+nixpacks.toml
+railway.toml
+*.md
+.env
+.env.*
+.DS_Store
